@@ -13,6 +13,10 @@ A Fast and Flexible Static Site Generator built with love by [bep](https://githu
 [![Tests on Linux, MacOS and Windows](https://github.com/gohugoio/hugo/workflows/Test/badge.svg)](https://github.com/gohugoio/hugo/actions?query=workflow%3ATest)
 [![Go Report Card](https://goreportcard.com/badge/github.com/gohugoio/hugo)](https://goreportcard.com/report/github.com/gohugoio/hugo)
 
+## What I changed ?
+
+I add toc support for pandoc. And If you want enable highligh, you maybe config your `highligh.js` .
+
 ## Overview
 
 Hugo is a static HTML and CSS website generator written in [Go][].

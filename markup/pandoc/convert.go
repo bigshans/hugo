@@ -15,10 +15,14 @@
 package pandoc
 
 import (
+	"bytes"
 	"github.com/cli/safeexec"
 	"github.com/gohugoio/hugo/htesting"
 	"github.com/gohugoio/hugo/identity"
 	"github.com/gohugoio/hugo/markup/internal"
+	"github.com/gohugoio/hugo/markup/tableofcontents"
+	"golang.org/x/net/html"
+	"regexp"
 
 	"github.com/gohugoio/hugo/markup/converter"
 )
@@ -43,9 +47,24 @@ type pandocConverter struct {
 	cfg converter.ProviderConfig
 }
 
-func (c *pandocConverter) Convert(ctx converter.RenderContext) (converter.Result, error) {
-	return converter.Bytes(c.getPandocContent(ctx.Src, c.ctx)), nil
+type pandocResult struct {
+	converter.Result
+	toc tableofcontents.Root
 }
+
+func (r pandocResult) TableOfContents() tableofcontents.Root {
+	return r.toc
+}
+
+func (c *pandocConverter) Convert(ctx converter.RenderContext) (converter.Result, error) {
+	content, toc, err := c.extractTOC(c.getPandocContent(ctx.Src, c.ctx))
+	if err != nil {
+		return nil, err
+	}
+	return pandocResult{
+		Result: converter.Bytes(content),
+		toc:    toc,
+	}, nil}
 
 func (c *pandocConverter) Supports(feature identity.Identity) bool {
 	return false
@@ -60,7 +79,7 @@ func (c *pandocConverter) getPandocContent(src []byte, ctx converter.DocumentCon
 			"                 Leaving pandoc content unrendered.")
 		return src
 	}
-	args := []string{"--mathjax"}
+	args := []string{"--mathjax", "--toc", "-s", "--metadata", "title=", "--quiet", "--highlight-style=pygments"}
 	return internal.ExternallyRenderContent(c.cfg, ctx, src, path, args)
 }
 
@@ -71,6 +90,138 @@ func getPandocExecPath() string {
 	}
 
 	return path
+}
+
+// extractTOC extracts the toc from the given src html.
+// It returns the html without the TOC, and the TOC data
+func (a *pandocConverter) extractTOC(src []byte) ([]byte, tableofcontents.Root, error) {
+	var buf bytes.Buffer
+	buf.Write(src)
+	node, err := html.Parse(&buf)
+	if err != nil {
+		return nil, tableofcontents.Root{}, err
+	}
+
+	var (
+		f       func(*html.Node) bool
+		body    *html.Node
+		toc     tableofcontents.Root
+		toVisit []*html.Node
+	)
+
+	f = func(n *html.Node) bool {
+		if n.Type == html.ElementNode && n.Data == "body" {
+			body = n
+			return true
+		}
+		if n.FirstChild != nil {
+			toVisit = append(toVisit, n.FirstChild)
+		}
+		if n.NextSibling != nil && f(n.NextSibling) {
+			return true
+		}
+		for len(toVisit) > 0 {
+			nv := toVisit[0]
+			toVisit = toVisit[1:]
+			if f(nv) {
+				return true
+			}
+		}
+		return false
+	}
+	if !f(node) {
+		return nil, tableofcontents.Root{}, err
+	}
+
+	f = func(n *html.Node) bool {
+		if n.Type == html.ElementNode && n.Data == "nav" && attr(n, "id") == "TOC" {
+			toc = parseTOC(n)
+			if !a.cfg.MarkupConfig.Pandoc.PreserveTOC {
+				n.Parent.RemoveChild(n)
+			}
+			return true
+		}
+		if n.FirstChild != nil {
+			toVisit = append(toVisit, n.FirstChild)
+		}
+		if n.NextSibling != nil && f(n.NextSibling) {
+			return true
+		}
+		for len(toVisit) > 0 {
+			nv := toVisit[0]
+			toVisit = toVisit[1:]
+			if f(nv) {
+				return true
+			}
+		}
+		return false
+	}
+	f(body)
+	if err != nil {
+		return nil, tableofcontents.Root{}, err
+	}
+	buf.Reset()
+	err = html.Render(&buf, body)
+	if err != nil {
+		return nil, tableofcontents.Root{}, err
+	}
+	// ltrim <html><head></head><body> and rtrim </body></html> which are added by html.Render
+	params := regexp.MustCompile("(?s)<body>(.*)</body>").FindSubmatch(buf.Bytes())
+	return params[1], toc, nil
+}
+
+// parseTOC returns a TOC root from the given toc Node
+func parseTOC(doc *html.Node) tableofcontents.Root {
+	var (
+		toc tableofcontents.Root
+		f   func(*html.Node, int, int)
+	)
+	f = func(n *html.Node, row, level int) {
+		if n.Type == html.ElementNode {
+			switch n.Data {
+			case "ul":
+				if level == 0 {
+					row++
+				}
+				level++
+				f(n.FirstChild, row, level)
+			case "li":
+				for c := n.FirstChild; c != nil; c = c.NextSibling {
+					if c.Type != html.ElementNode || c.Data != "a" {
+						continue
+					}
+					href := attr(c, "href")[1:]
+					toc.AddAt(tableofcontents.Heading{
+						Text: nodeContent(c),
+						ID:   href,
+					}, row, level)
+				}
+				f(n.FirstChild, row, level)
+			}
+		}
+		if n.NextSibling != nil {
+			f(n.NextSibling, row, level)
+		}
+	}
+	f(doc.FirstChild, -1, 0)
+	return toc
+}
+
+func attr(node *html.Node, key string) string {
+	for _, a := range node.Attr {
+		if a.Key == key {
+			return a.Val
+		}
+	}
+	return ""
+}
+
+func nodeContent(node *html.Node) string {
+	var buf bytes.Buffer
+	for c := node.FirstChild; c != nil; c = c.NextSibling {
+		html.Render(&buf, c)
+	}
+	return buf.String()
 }
 
 // Supports returns whether Pandoc is installed on this computer.
