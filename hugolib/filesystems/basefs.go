@@ -132,23 +132,23 @@ func (b *BaseFs) RelContentDir(filename string) string {
 
 // AbsProjectContentDir tries to construct a filename below the most
 // relevant content directory.
-func (b *BaseFs) AbsProjectContentDir(filename string) (string, string) {
+func (b *BaseFs) AbsProjectContentDir(filename string) (string, string, error) {
 	isAbs := filepath.IsAbs(filename)
 	for _, dir := range b.SourceFilesystems.Content.Dirs {
 		meta := dir.Meta()
-		if meta.Module != "project" {
+		if !meta.IsProject {
 			continue
 		}
 		if isAbs {
 			if strings.HasPrefix(filename, meta.Filename) {
-				return strings.TrimPrefix(filename, meta.Filename), filename
+				return strings.TrimPrefix(filename, meta.Filename), filename, nil
 			}
 		} else {
 			contentDir := strings.TrimPrefix(strings.TrimPrefix(meta.Filename, meta.BaseDir), filePathSeparator)
 			if strings.HasPrefix(filename, contentDir) {
 				relFilename := strings.TrimPrefix(filename, contentDir)
 				absFilename := filepath.Join(meta.Filename, relFilename)
-				return relFilename, absFilename
+				return relFilename, absFilename, nil
 			}
 		}
 
@@ -157,14 +157,17 @@ func (b *BaseFs) AbsProjectContentDir(filename string) (string, string) {
 	if !isAbs {
 		// A filename on the form "posts/mypage.md", put it inside
 		// the first content folder, usually <workDir>/content.
-		// The Dirs are ordered with the most important last, so pick that.
+		// Pick the last project dir (which is probably the most important one).
 		contentDirs := b.SourceFilesystems.Content.Dirs
-		firstContentDir := contentDirs[len(contentDirs)-1].Meta().Filename
-		return filename, filepath.Join(firstContentDir, filename)
-
+		for i := len(contentDirs) - 1; i >= 0; i-- {
+			meta := contentDirs[i].Meta()
+			if meta.IsProject {
+				return filename, filepath.Join(meta.Filename, filename), nil
+			}
+		}
 	}
 
-	return "", ""
+	return "", "", errors.Errorf("could not determine content directory for %q", filename)
 }
 
 // ResolveJSConfigFile resolves the JS-related config file to a absolute
@@ -642,6 +645,7 @@ func (b *sourceFilesystemsBuilder) createModFs(
 			To:        filename,
 			ToBasedir: base,
 			Module:    md.Module.Path(),
+			IsProject: md.isMainProject,
 			Meta: &hugofs.FileMeta{
 				Watch:           md.Watch(),
 				Weight:          mountWeight,
