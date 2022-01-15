@@ -25,14 +25,6 @@ import (
 
 var issueRe = regexp.MustCompile(`(?i)(?:Updates?|Closes?|Fix.*|See) #(\d+)`)
 
-const (
-	notesChanges    = "notesChanges"
-	templateChanges = "templateChanges"
-	coreChanges     = "coreChanges"
-	outChanges      = "outChanges"
-	otherChanges    = "otherChanges"
-)
-
 type changeLog struct {
 	Version string
 	Notes   gitInfos
@@ -52,7 +44,7 @@ func newChangeLog(infos, docInfos gitInfos) *changeLog {
 
 	for _, info := range infos {
 		// TODO(bep) improve
-		if regexp.MustCompile("(?i)deprecate").MatchString(info.Subject) {
+		if regexp.MustCompile("(?i)deprecate|note").MatchString(info.Subject) {
 			log.Notes = append(log.Notes, info)
 		}
 

@@ -18,6 +18,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/gohugoio/hugo/config/security"
 	"github.com/gohugoio/hugo/htesting"
 
 	"github.com/gohugoio/hugo/output"
@@ -30,6 +31,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/gohugoio/hugo/common/herrors"
+	"github.com/gohugoio/hugo/common/hexec"
 	"github.com/gohugoio/hugo/common/maps"
 	"github.com/gohugoio/hugo/config"
 	"github.com/gohugoio/hugo/deps"
@@ -791,6 +793,15 @@ func (s *sitesBuilder) GetPageRel(p page.Page, ref string) page.Page {
 	return p
 }
 
+func (s *sitesBuilder) NpmInstall() hexec.Runner {
+	sc := security.DefaultConfig
+	sc.Exec.Allow = security.NewWhitelist("npm")
+	ex := hexec.New(sc)
+	command, err := ex.New("npm", "install")
+	s.Assert(err, qt.IsNil)
+	return command
+}
+
 func newTestHelper(cfg config.Provider, fs *hugofs.Fs, t testing.TB) testHelper {
 	return testHelper{
 		Cfg: cfg,
@@ -986,7 +997,7 @@ func content(c resource.ContentProvider) string {
 func pagesToString(pages ...page.Page) string {
 	var paths []string
 	for _, p := range pages {
-		paths = append(paths, p.Path())
+		paths = append(paths, p.Pathc())
 	}
 	sort.Strings(paths)
 	return strings.Join(paths, "|")
@@ -1008,7 +1019,7 @@ func dumpPages(pages ...page.Page) {
 	fmt.Println("---------")
 	for _, p := range pages {
 		fmt.Printf("Kind: %s Title: %-10s RelPermalink: %-10s Path: %-10s sections: %s Lang: %s\n",
-			p.Kind(), p.Title(), p.RelPermalink(), p.Path(), p.SectionsPath(), p.Lang())
+			p.Kind(), p.Title(), p.RelPermalink(), p.Pathc(), p.SectionsPath(), p.Lang())
 	}
 }
 
@@ -1016,7 +1027,7 @@ func dumpSPages(pages ...*pageState) {
 	for i, p := range pages {
 		fmt.Printf("%d: Kind: %s Title: %-10s RelPermalink: %-10s Path: %-10s sections: %s\n",
 			i+1,
-			p.Kind(), p.Title(), p.RelPermalink(), p.Path(), p.SectionsPath())
+			p.Kind(), p.Title(), p.RelPermalink(), p.Pathc(), p.SectionsPath())
 	}
 }
 

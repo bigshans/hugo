@@ -37,6 +37,11 @@ type OriginProvider interface {
 	GetFieldString(pattern string) (string, bool)
 }
 
+// ErrProvider provides an Err.
+type ErrProvider interface {
+	Err() error
+}
+
 // Resource represents a linkable resource, i.e. a content page, image etc.
 type Resource interface {
 	ResourceTypeProvider
@@ -45,6 +50,7 @@ type Resource interface {
 	ResourceMetaProvider
 	ResourceParamsProvider
 	ResourceDataProvider
+	ErrProvider
 }
 
 // Image represents an image resource.
@@ -155,11 +161,7 @@ type OpenReadSeekCloser func() (hugio.ReadSeekCloser, error)
 // ReadSeekCloserResource is a Resource that supports loading its content.
 type ReadSeekCloserResource interface {
 	MediaType() media.Type
-	ReadSeekCloserProvider
-}
-
-type ReadSeekCloserProvider interface {
-	ReadSeekCloser() (hugio.ReadSeekCloser, error)
+	hugio.ReadSeekCloserProvider
 }
 
 // LengthProvider is a Resource that provides a length

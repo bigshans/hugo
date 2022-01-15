@@ -229,7 +229,7 @@ See https://github.com/disintegration/imaging for more. If you want to trade qua
 
 By default the images is encoded in the source format, but you can set the target format as an option.
 
-Valid values are `jpg`, `png`, `tif`, `bmp`, `gif` and `webp`.
+Valid values are `bmp`, `gif`, `jpeg`, `jpg`, `png`, `tif`, `tiff`, and `webp`.
 
 ```go
 {{ $image.Resize "600x jpg" }}
@@ -305,7 +305,7 @@ bgColor = "#ffffff"
 # disk space reasons more than anything.
 # If you want it all, put ".*" in this config setting.
 # Note that if neither this or ExcludeFields is set, Hugo will return a small
-# default set.
+# default set: GPS|Exif|Exposure[M|P|B]|Contrast|Resolution|Sharp|JPEG|Metering|Sensing|Saturation|ColorSpace|Flash|WhiteBalance
 includeFields = ""
 
 # Regexp matching the Exif fields you want to exclude. This may be easier to use

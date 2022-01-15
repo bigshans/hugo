@@ -533,17 +533,7 @@ e`,
 			filepath.FromSlash("public/sect/doc8/index.html"),
 			"<div class=\"document\">\n\n\n<p><strong>Shortcodes:</strong> <em>b: b c: c</em></p>\n</div>",
 		},
-		{
-			"sect/doc9.mmark", `
----
-menu:
-  main:
-    parent: 'parent'
----
-**Shortcodes:** *b: {{< b >}} c: {{% c %}}*`,
-			filepath.FromSlash("public/sect/doc9/index.html"),
-			"<p><strong>Shortcodes:</strong> <em>b: b c: c</em></p>\n",
-		},
+
 		// Issue #1229: Menus not available in shortcode.
 		{
 			"sect/doc10.md", `---
@@ -562,6 +552,9 @@ tags:
 			"sect/doc11.md", `---
 tags:
 - Bugs
+menu:
+  main:
+    parent: 'parent'
 ---
 **Tags:** {{< tags >}}`,
 			filepath.FromSlash("public/sect/doc11/index.html"),
@@ -618,6 +611,12 @@ title: "Foo"
 	cfg.Set("baseURL", baseURL)
 	cfg.Set("uglyURLs", false)
 	cfg.Set("verbose", true)
+
+	cfg.Set("security", map[string]interface{}{
+		"exec": map[string]interface{}{
+			"allow": []string{"^python$", "^rst2html.*", "^asciidoctor$"},
+		},
+	})
 
 	cfg.Set("markup.highlight.noClasses", false)
 	cfg.Set("markup.highlight.codeFences", true)
@@ -1384,7 +1383,7 @@ outputs: ["html", "css", "csv", "json"]
 
 		b.Build(BuildCfg{})
 
-		//helpers.PrintFs(b.Fs.Destination, "public", os.Stdout)
+		// helpers.PrintFs(b.Fs.Destination, "public", os.Stdout)
 
 		for i := 0; i < numPages; i++ {
 			b.AssertFileContent(fmt.Sprintf("public/page%d/index.html", i), "Short-HTML")

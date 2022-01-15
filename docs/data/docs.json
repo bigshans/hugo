@@ -1775,7 +1775,13 @@
       "permalinks": {
         "_merge": "none"
       },
+      "privacy": {
+        "_merge": "none"
+      },
       "related": {
+        "_merge": "none"
+      },
+      "security": {
         "_merge": "none"
       },
       "sitemap": {
@@ -1821,6 +1827,33 @@
         "xml": {
           "keepWhitespace": false
         }
+      }
+    },
+    "security": {
+      "enableInlineShortcodes": false,
+      "exec": {
+        "allow": [
+          "^dart-sass-embedded$",
+          "^go$",
+          "^npx$",
+          "^postcss$"
+        ],
+        "osEnv": [
+          "(?i)^(PATH|PATHEXT|APPDATA|TMP|TEMP|TERM)$"
+        ]
+      },
+      "funcs": {
+        "getenv": [
+          "^HUGO_"
+        ]
+      },
+      "http": {
+        "methods": [
+          "(?i)GET|POST"
+        ],
+        "urls": [
+          ".*"
+        ]
       }
     }
   },
@@ -1884,6 +1917,20 @@
       },
       {
         "mainType": "application",
+        "subType": "pdf",
+        "delimiter": ".",
+        "firstSuffix": {
+          "suffix": "pdf",
+          "fullSuffix": ".pdf"
+        },
+        "type": "application/pdf",
+        "string": "application/pdf",
+        "suffixes": [
+          "pdf"
+        ]
+      },
+      {
+        "mainType": "application",
         "subType": "rss",
         "delimiter": ".",
         "firstSuffix": {
@@ -1893,7 +1940,8 @@
         "type": "application/rss+xml",
         "string": "application/rss+xml",
         "suffixes": [
-          "xml"
+          "xml",
+          "rss"
         ]
       },
       {
@@ -1954,6 +2002,62 @@
         ]
       },
       {
+        "mainType": "font",
+        "subType": "otf",
+        "delimiter": ".",
+        "firstSuffix": {
+          "suffix": "otf",
+          "fullSuffix": ".otf"
+        },
+        "type": "font/otf",
+        "string": "font/otf",
+        "suffixes": [
+          "otf"
+        ]
+      },
+      {
+        "mainType": "font",
+        "subType": "ttf",
+        "delimiter": ".",
+        "firstSuffix": {
+          "suffix": "ttf",
+          "fullSuffix": ".ttf"
+        },
+        "type": "font/ttf",
+        "string": "font/ttf",
+        "suffixes": [
+          "ttf"
+        ]
+      },
+      {
+        "mainType": "image",
+        "subType": "bmp",
+        "delimiter": ".",
+        "firstSuffix": {
+          "suffix": "bmp",
+          "fullSuffix": ".bmp"
+        },
+        "type": "image/bmp",
+        "string": "image/bmp",
+        "suffixes": [
+          "bmp"
+        ]
+      },
+      {
+        "mainType": "image",
+        "subType": "gif",
+        "delimiter": ".",
+        "firstSuffix": {
+          "suffix": "gif",
+          "fullSuffix": ".gif"
+        },
+        "type": "image/gif",
+        "string": "image/gif",
+        "suffixes": [
+          "gif"
+        ]
+      },
+      {
         "mainType": "image",
         "subType": "jpeg",
         "delimiter": ".",
@@ -1965,7 +2069,10 @@
         "string": "image/jpeg",
         "suffixes": [
           "jpg",
-          "jpeg"
+          "jpeg",
+          "jpe",
+          "jif",
+          "jfif"
         ]
       },
       {
@@ -3754,6 +3861,12 @@
         }
       },
       "hugo": {
+        "Deps": {
+          "Description": "",
+          "Args": null,
+          "Aliases": null,
+          "Examples": null
+        },
         "Generator": {
           "Description": "",
           "Args": null,
@@ -3875,6 +3988,12 @@
           "Examples": null
         },
         "Sigmoid": {
+          "Description": "",
+          "Args": null,
+          "Aliases": null,
+          "Examples": null
+        },
+        "Text": {
           "Description": "",
           "Args": null,
           "Aliases": null,
@@ -4517,7 +4636,7 @@
           "Examples": null
         },
         "Get": {
-          "Description": "Get locates the filename given in Hugo's assets filesystem\nand creates a Resource object that can be used for further transformations.",
+          "Description": "Get locates the filename given in Hugo's assets filesystem and\ncreates a Resource object that can be used for\nfurther transformations.",
           "Args": [
             "filename"
           ],
@@ -4529,6 +4648,14 @@
           "Args": null,
           "Aliases": null,
           "Examples": null
+        },
+        "GetRemote": {
+          "Description": "GetRemote gets the URL (via HTTP(s)) in the first argument in args and creates Resource object that can be used for\nfurther transformations.\n\nA second argument may be provided with an option map.\n\nNote: This method does not return any error as a second argument,\nfor any error situations the error can be checked in .Err.",
+          "Args": [
+            "args"
+          ],
+          "Aliases": null,
+          "Examples": []
         },
         "Match": {
           "Description": "",

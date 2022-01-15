@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gohugoio/hugo/common/hexec"
 	"github.com/gohugoio/hugo/common/types"
 
 	"github.com/gohugoio/hugo/common/maps"
@@ -41,6 +42,7 @@ import (
 
 	"github.com/gohugoio/hugo/config"
 	"github.com/gohugoio/hugo/config/privacy"
+	"github.com/gohugoio/hugo/config/security"
 	"github.com/gohugoio/hugo/config/services"
 	"github.com/gohugoio/hugo/helpers"
 	"github.com/spf13/afero"
@@ -51,7 +53,6 @@ var ErrNoConfigFile = errors.New("Unable to locate config file or config directo
 // LoadConfig loads Hugo configuration into a new Viper and then adds
 // a set of defaults.
 func LoadConfig(d ConfigSourceDescriptor, doWithConfig ...func(cfg config.Provider) error) (config.Provider, []string, error) {
-
 	if d.Environment == "" {
 		d.Environment = hugo.EnvironmentProduction
 	}
@@ -108,15 +109,8 @@ func LoadConfig(d ConfigSourceDescriptor, doWithConfig ...func(cfg config.Provid
 	}
 
 	// Config deprecations.
-	// We made this a Glob pattern in Hugo 0.75, we don't need both.
-	if l.cfg.GetBool("ignoreVendor") {
-		helpers.Deprecated("--ignoreVendor", "--ignoreVendorPaths **", true)
-		l.cfg.Set("ignoreVendorPaths", "**")
-	}
-
 	if l.cfg.GetString("markup.defaultMarkdownHandler") == "blackfriday" {
 		helpers.Deprecated("markup.defaultMarkdownHandler=blackfriday", "See https://gohugo.io//content-management/formats/#list-of-content-formats", false)
-
 	}
 
 	// Some settings are used before we're done collecting all settings,
@@ -377,6 +371,12 @@ func (l configLoader) collectModules(modConfig modules.Config, v1 config.Provide
 		return nil, nil, err
 	}
 
+	secConfig, err := security.DecodeConfig(v1)
+	if err != nil {
+		return nil, nil, err
+	}
+	ex := hexec.New(secConfig)
+
 	v1.Set("filecacheConfigs", filecacheConfigs)
 
 	var configFilenames []string
@@ -405,6 +405,7 @@ func (l configLoader) collectModules(modConfig modules.Config, v1 config.Provide
 	modulesClient := modules.NewClient(modules.ClientConfig{
 		Fs:                 l.Fs,
 		Logger:             l.Logger,
+		Exec:               ex,
 		HookBeforeFinalize: hook,
 		WorkingDir:         workingDir,
 		ThemesDir:          themesDir,

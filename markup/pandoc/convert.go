@@ -71,25 +71,25 @@ func (c *pandocConverter) Supports(feature identity.Identity) bool {
 }
 
 // getPandocContent calls pandoc as an external helper to convert pandoc markdown to HTML.
-func (c *pandocConverter) getPandocContent(src []byte, ctx converter.DocumentContext) []byte {
+func (c *pandocConverter) getPandocContent(src []byte, ctx converter.DocumentContext) ([]byte, error) {
 	logger := c.cfg.Logger
-	path := getPandocExecPath()
-	if path == "" {
+	binaryName := getPandocBinaryName()
+	if binaryName == "" {
 		logger.Println("pandoc not found in $PATH: Please install.\n",
 			"                 Leaving pandoc content unrendered.")
-		return src
+		return src, nil
 	}
 	args := []string{"--mathjax", "--toc", "-s", "--metadata", "title=", "--quiet", "--highlight-style=pygments"}
 	return internal.ExternallyRenderContent(c.cfg, ctx, src, path, args)
 }
 
-func getPandocExecPath() string {
-	path, err := safeexec.LookPath("pandoc")
-	if err != nil {
-		return ""
-	}
+const pandocBinary = "pandoc"
 
-	return path
+func getPandocBinaryName() string {
+	if hexec.InPath(pandocBinary) {
+		return pandocBinary
+	}
+	return ""
 }
 
 // extractTOC extracts the toc from the given src html.
@@ -226,8 +226,12 @@ func nodeContent(node *html.Node) string {
 
 // Supports returns whether Pandoc is installed on this computer.
 func Supports() bool {
+	hasBin := getPandocBinaryName() != ""
 	if htesting.SupportsAll() {
+		if !hasBin {
+			panic("pandoc not installed")
+		}
 		return true
 	}
-	return getPandocExecPath() != ""
+	return hasBin
 }
