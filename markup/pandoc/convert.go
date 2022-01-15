@@ -57,7 +57,8 @@ func (r pandocResult) TableOfContents() tableofcontents.Root {
 }
 
 func (c *pandocConverter) Convert(ctx converter.RenderContext) (converter.Result, error) {
-	content, toc, err := c.extractTOC(c.getPandocContent(ctx.Src, c.ctx))
+	bytes, _ := c.getPandocContent(ctx.Src, c.ctx)
+	content, toc, err := c.extractTOC(bytes)
 	if err != nil {
 		return nil, err
 	}
