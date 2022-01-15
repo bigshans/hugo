@@ -16,7 +16,7 @@ package pandoc
 
 import (
 	"bytes"
-	"github.com/cli/safeexec"
+	"github.com/gohugoio/hugo/common/hexec"
 	"github.com/gohugoio/hugo/htesting"
 	"github.com/gohugoio/hugo/identity"
 	"github.com/gohugoio/hugo/markup/internal"
@@ -64,7 +64,8 @@ func (c *pandocConverter) Convert(ctx converter.RenderContext) (converter.Result
 	return pandocResult{
 		Result: converter.Bytes(content),
 		toc:    toc,
-	}, nil}
+	}, nil
+}
 
 func (c *pandocConverter) Supports(feature identity.Identity) bool {
 	return false
@@ -80,7 +81,7 @@ func (c *pandocConverter) getPandocContent(src []byte, ctx converter.DocumentCon
 		return src, nil
 	}
 	args := []string{"--mathjax", "--toc", "-s", "--metadata", "title=", "--quiet", "--highlight-style=pygments"}
-	return internal.ExternallyRenderContent(c.cfg, ctx, src, path, args)
+	return internal.ExternallyRenderContent(c.cfg, ctx, src, binaryName, args)
 }
 
 const pandocBinary = "pandoc"
