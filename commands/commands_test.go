@@ -190,13 +190,14 @@ func TestFlags(t *testing.T) {
 				"--navigateToChanged",
 				"--disableLiveReload",
 				"--noHTTPCache",
-				"--i18n-warnings",
+				"--printI18nWarnings",
 				"--destination=/tmp/mydestination",
 				"-b=https://example.com/b/",
 				"--port=1366",
 				"--renderToDisk",
 				"--source=mysource",
-				"--path-warnings",
+				"--printPathWarnings",
+				"--printUnusedTemplates",
 			},
 			check: func(c *qt.C, sc *serverCmd) {
 				c.Assert(sc, qt.Not(qt.IsNil))
@@ -220,10 +221,10 @@ func TestFlags(t *testing.T) {
 
 				c.Assert(cfg.GetBool("gc"), qt.Equals, true)
 
-				// The flag is named path-warnings
+				// The flag is named printPathWarnings
 				c.Assert(cfg.GetBool("logPathWarnings"), qt.Equals, true)
 
-				// The flag is named i18n-warnings
+				// The flag is named printI18nWarnings
 				c.Assert(cfg.GetBool("logI18nWarnings"), qt.Equals, true)
 			},
 		},
@@ -274,11 +275,14 @@ func TestCommandsExecute(t *testing.T) {
 		// no args = hugo build
 		{nil, []string{sourceFlag}, ""},
 		{nil, []string{sourceFlag, "--renderToMemory"}, ""},
+		{[]string{"completion", "bash"}, nil, ""},
+		{[]string{"completion", "fish"}, nil, ""},
+		{[]string{"completion", "powershell"}, nil, ""},
+		{[]string{"completion", "zsh"}, nil, ""},
 		{[]string{"config"}, []string{sourceFlag}, ""},
 		{[]string{"convert", "toTOML"}, []string{sourceFlag, "-o=" + filepath.Join(dirOut, "toml")}, ""},
 		{[]string{"convert", "toYAML"}, []string{sourceFlag, "-o=" + filepath.Join(dirOut, "yaml")}, ""},
 		{[]string{"convert", "toJSON"}, []string{sourceFlag, "-o=" + filepath.Join(dirOut, "json")}, ""},
-		{[]string{"gen", "autocomplete"}, []string{"--completionfile=" + filepath.Join(dirOut, "autocomplete.txt")}, ""},
 		{[]string{"gen", "chromastyles"}, []string{"--style=manni"}, ""},
 		{[]string{"gen", "doc"}, []string{"--dir=" + filepath.Join(dirOut, "doc")}, ""},
 		{[]string{"gen", "man"}, []string{"--dir=" + filepath.Join(dirOut, "man")}, ""},

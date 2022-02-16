@@ -40,7 +40,6 @@ hugo [flags]
       --forceSyncStatic            copy all files when static is changed.
       --gc                         enable to run some cleanup tasks (remove unused cache files) after the build
   -h, --help                       help for hugo
-      --i18n-warnings              print missing translations
       --ignoreCache                ignores the cache directory
       --ignoreVendorPaths string   ignores any _vendor for module paths matching the given Glob pattern
   -l, --layoutDir string           filesystem path to layout directory
@@ -50,9 +49,11 @@ hugo [flags]
       --noChmod                    don't sync permission mode of files
       --noTimes                    don't sync modification time of files
       --panicOnWarning             panic on first WARNING log
-      --path-warnings              print warnings on duplicate target paths etc.
       --poll string                set this to a poll interval, e.g --poll 700ms, to use a poll based approach to watch for file system changes
-      --print-mem                  print memory usage to screen at intervals
+      --printI18nWarnings          print missing translations
+      --printMemoryUsage           print memory usage to screen at intervals
+      --printPathWarnings          print warnings on duplicate target paths etc.
+      --printUnusedTemplates       print warnings on unused templates.
       --quiet                      build in quiet mode
       --renderToMemory             render to memory (only useful for benchmark testing)
   -s, --source string              filesystem path to read files relative from
@@ -68,7 +69,6 @@ hugo [flags]
 
 ### SEE ALSO
 
-* [hugo check](/commands/hugo_check/)	 - Contains some verification checks
 * [hugo completion](/commands/hugo_completion/)	 - generate the autocompletion script for the specified shell
 * [hugo config](/commands/hugo_config/)	 - Print the site configuration
 * [hugo convert](/commands/hugo_convert/)	 - Convert your content to different formats

@@ -148,8 +148,9 @@ var (
 
 	// Attributes with special meaning that does not make sense to render in HTML.
 	attributeExcludes = map[string]bool{
-		"linenos":     true,
 		"hl_lines":    true,
+		"hl_style":    true,
+		"linenos":     true,
 		"linenostart": true,
 	}
 )
@@ -160,7 +161,8 @@ func renderAttributes(w util.BufWriter, skipClass bool, attributes ...ast.Attrib
 			continue
 		}
 
-		if attributeExcludes[string(attr.Name)] {
+		a := strings.ToLower(string(attr.Name))
+		if attributeExcludes[a] || strings.HasPrefix(a, "on") {
 			continue
 		}
 
