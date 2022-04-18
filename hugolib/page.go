@@ -22,6 +22,8 @@ import (
 	"sort"
 	"strings"
 
+	"go.uber.org/atomic"
+
 	"github.com/gohugoio/hugo/identity"
 
 	"github.com/gohugoio/hugo/markup/converter"
@@ -47,7 +49,6 @@ import (
 
 	"github.com/gohugoio/hugo/common/collections"
 	"github.com/gohugoio/hugo/common/text"
-	"github.com/gohugoio/hugo/markup/converter/hooks"
 	"github.com/gohugoio/hugo/resources"
 	"github.com/gohugoio/hugo/resources/page"
 	"github.com/gohugoio/hugo/resources/resource"
@@ -78,7 +79,7 @@ type pageContext interface {
 }
 
 // wrapErr adds some context to the given error if possible.
-func wrapErr(err error, ctx interface{}) error {
+func wrapErr(err error, ctx any) error {
 	if pc, ok := ctx.(pageContext); ok {
 		return pc.wrapError(err)
 	}
@@ -118,6 +119,9 @@ type pageState struct {
 	// formats (for all sites).
 	pageOutputs []*pageOutput
 
+	// Used to determine if we can reuse content across output formats.
+	pageOutputTemplateVariationsState *atomic.Uint32
+
 	// This will be shifted out when we start to render a new output format.
 	*pageOutput
 
@@ -125,13 +129,17 @@ type pageState struct {
 	*pageCommon
 }
 
-func (p *pageState) Err() error {
+func (p *pageState) reusePageOutputContent() bool {
+	return p.pageOutputTemplateVariationsState.Load() == 1
+}
+
+func (p *pageState) Err() resource.ResourceError {
 	return nil
 }
 
 // Eq returns whether the current page equals the given page.
 // This is what's invoked when doing `{{ if eq $page $otherPage }}`
-func (p *pageState) Eq(other interface{}) bool {
+func (p *pageState) Eq(other any) bool {
 	pp, err := unwrapPage(other)
 	if err != nil {
 		return false
@@ -146,6 +154,10 @@ func (p *pageState) GetIdentity() identity.Identity {
 
 func (p *pageState) GitInfo() *gitmap.GitInfo {
 	return p.gitInfo
+}
+
+func (p *pageState) CodeOwners() []string {
+	return p.codeowners
 }
 
 // GetTerms gets the terms defined on this page in the given taxonomy.
@@ -390,56 +402,6 @@ func (ps *pageState) initCommonProviders(pp pagePaths) error {
 	return nil
 }
 
-func (p *pageState) createRenderHooks(f output.Format) (hooks.Renderers, error) {
-	layoutDescriptor := p.getLayoutDescriptor()
-	layoutDescriptor.RenderingHook = true
-	layoutDescriptor.LayoutOverride = false
-	layoutDescriptor.Layout = ""
-
-	var renderers hooks.Renderers
-
-	layoutDescriptor.Kind = "render-link"
-	templ, templFound, err := p.s.Tmpl().LookupLayout(layoutDescriptor, f)
-	if err != nil {
-		return renderers, err
-	}
-	if templFound {
-		renderers.LinkRenderer = hookRenderer{
-			templateHandler: p.s.Tmpl(),
-			SearchProvider:  templ.(identity.SearchProvider),
-			templ:           templ,
-		}
-	}
-
-	layoutDescriptor.Kind = "render-image"
-	templ, templFound, err = p.s.Tmpl().LookupLayout(layoutDescriptor, f)
-	if err != nil {
-		return renderers, err
-	}
-	if templFound {
-		renderers.ImageRenderer = hookRenderer{
-			templateHandler: p.s.Tmpl(),
-			SearchProvider:  templ.(identity.SearchProvider),
-			templ:           templ,
-		}
-	}
-
-	layoutDescriptor.Kind = "render-heading"
-	templ, templFound, err = p.s.Tmpl().LookupLayout(layoutDescriptor, f)
-	if err != nil {
-		return renderers, err
-	}
-	if templFound {
-		renderers.HeadingRenderer = hookRenderer{
-			templateHandler: p.s.Tmpl(),
-			SearchProvider:  templ.(identity.SearchProvider),
-			templ:           templ,
-		}
-	}
-
-	return renderers, nil
-}
-
 func (p *pageState) getLayoutDescriptor() output.LayoutDescriptor {
 	p.layoutDescriptorInit.Do(func() {
 		var section string
@@ -638,7 +600,7 @@ func (p *pageState) mapContent(bucket *pagesMapBucket, meta *pageMeta) error {
 	s := p.shortcodeState
 
 	rn := &pageContentMap{
-		items: make([]interface{}, 0, 20),
+		items: make([]any, 0, 20),
 	}
 
 	iter := p.source.parsed.Iterator()
@@ -775,12 +737,12 @@ Loop:
 	return nil
 }
 
-func (p *pageState) errorf(err error, format string, a ...interface{}) error {
+func (p *pageState) errorf(err error, format string, a ...any) error {
 	if herrors.UnwrapErrorWithFileContext(err) != nil {
 		// More isn't always better.
 		return err
 	}
-	args := append([]interface{}{p.Language().Lang, p.pathOrTitle()}, a...)
+	args := append([]any{p.Language().Lang, p.pathOrTitle()}, a...)
 	format = "[%s] page %q: " + format
 	if err == nil {
 		errors.Errorf(format, args...)
@@ -822,6 +784,11 @@ func (p *pageState) posFromPage(offset int) text.Position {
 }
 
 func (p *pageState) posFromInput(input []byte, offset int) text.Position {
+	if offset < 0 {
+		return text.Position{
+			Filename: p.pathOrTitle(),
+		}
+	}
 	lf := []byte("\n")
 	input = input[:offset]
 	lineNumber := bytes.Count(input, lf) + 1
@@ -863,7 +830,7 @@ func (p *pageState) shiftToOutputFormat(isRenderingSite bool, idx int) error {
 
 	if isRenderingSite {
 		cp := p.pageOutput.cp
-		if cp == nil {
+		if cp == nil && p.reusePageOutputContent() {
 			// Look for content to reuse.
 			for i := 0; i < len(p.pageOutputs); i++ {
 				if i == idx {
@@ -871,7 +838,7 @@ func (p *pageState) shiftToOutputFormat(isRenderingSite bool, idx int) error {
 				}
 				po := p.pageOutputs[i]
 
-				if po.cp != nil && po.cp.reuse {
+				if po.cp != nil {
 					cp = po.cp
 					break
 				}

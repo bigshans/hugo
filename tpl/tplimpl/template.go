@@ -15,6 +15,7 @@ package tplimpl
 
 import (
 	"bytes"
+	"context"
 	"embed"
 	"io"
 	"io/fs"
@@ -117,7 +118,7 @@ func newIdentity(name string) identity.Manager {
 	return identity.NewManager(identity.NewPathIdentity(files.ComponentFolderLayouts, name))
 }
 
-func newStandaloneTextTemplate(funcs map[string]interface{}) tpl.TemplateParseFinder {
+func newStandaloneTextTemplate(funcs map[string]any) tpl.TemplateParseFinder {
 	return &textTemplateWrapperWithLock{
 		RWMutex:  &sync.RWMutex{},
 		Template: texttemplate.New("").Funcs(funcs),
@@ -126,7 +127,7 @@ func newStandaloneTextTemplate(funcs map[string]interface{}) tpl.TemplateParseFi
 
 func newTemplateExec(d *deps.Deps) (*templateExec, error) {
 	exec, funcs := newTemplateExecuter(d)
-	funcMap := make(map[string]interface{})
+	funcMap := make(map[string]any)
 	for k, v := range funcs {
 		funcMap[k] = v.Interface()
 	}
@@ -183,7 +184,7 @@ func newTemplateExec(d *deps.Deps) (*templateExec, error) {
 	return e, nil
 }
 
-func newTemplateNamespace(funcs map[string]interface{}) *templateNamespace {
+func newTemplateNamespace(funcs map[string]any) *templateNamespace {
 	return &templateNamespace{
 		prototypeHTML: htmltemplate.New("").Funcs(funcs),
 		prototypeText: texttemplate.New("").Funcs(funcs),
@@ -224,7 +225,11 @@ func (t templateExec) Clone(d *deps.Deps) *templateExec {
 	return &t
 }
 
-func (t *templateExec) Execute(templ tpl.Template, wr io.Writer, data interface{}) error {
+func (t *templateExec) Execute(templ tpl.Template, wr io.Writer, data any) error {
+	return t.ExecuteWithContext(context.Background(), templ, wr, data)
+}
+
+func (t *templateExec) ExecuteWithContext(ctx context.Context, templ tpl.Template, wr io.Writer, data any) error {
 	if rlocker, ok := templ.(types.RLocker); ok {
 		rlocker.RLock()
 		defer rlocker.RUnlock()
@@ -249,11 +254,10 @@ func (t *templateExec) Execute(templ tpl.Template, wr io.Writer, data interface{
 		}
 	}
 
-	execErr := t.executor.Execute(templ, wr, data)
+	execErr := t.executor.ExecuteWithContext(ctx, templ, wr, data)
 	if execErr != nil {
 		execErr = t.addFileContext(templ, execErr)
 	}
-
 	return execErr
 }
 
@@ -277,15 +281,10 @@ func (t *templateExec) UnusedTemplates() []tpl.FileInfo {
 
 	for _, ts := range t.main.templates {
 		ti := ts.info
-		if strings.HasPrefix(ti.name, "_internal/") {
+		if strings.HasPrefix(ti.name, "_internal/") || ti.realFilename == "" {
 			continue
 		}
-		if strings.HasPrefix(ti.name, "partials/inline/pagination") {
-			// TODO(bep) we need to fix this. These are internal partials, but
-			// they may also be defined in the project, which currently could
-			// lead to some false negatives.
-			continue
-		}
+
 		if _, found := t.templateUsageTracker[ti.name]; !found {
 			unused = append(unused, ti)
 		}
@@ -736,6 +735,7 @@ func (t *templateHandler) extractIdentifiers(line string) []string {
 }
 
 //go:embed embedded/templates/*
+//go:embed embedded/templates/_default/*
 var embededTemplatesFs embed.FS
 
 func (t *templateHandler) loadEmbedded() error {
@@ -753,9 +753,19 @@ func (t *templateHandler) loadEmbedded() error {
 		// to write the templates to Go files.
 		templ := string(bytes.ReplaceAll(templb, []byte("\r\n"), []byte("\n")))
 		name := strings.TrimPrefix(filepath.ToSlash(path), "embedded/templates/")
+		templateName := name
 
-		if err := t.AddTemplate(internalPathPrefix+name, templ); err != nil {
-			return err
+		// For the render hooks it does not make sense to preseve the
+		// double _indternal double book-keeping,
+		// just add it if its now provided by the user.
+		if !strings.Contains(path, "_default/_markup") {
+			templateName = internalPathPrefix + name
+		}
+
+		if _, found := t.Lookup(templateName); !found {
+			if err := t.AddTemplate(templateName, templ); err != nil {
+				return err
+			}
 		}
 
 		if aliases, found := embeddedTemplatesAliases[name]; found {

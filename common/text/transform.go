@@ -14,6 +14,7 @@
 package text
 
 import (
+	"strings"
 	"sync"
 	"unicode"
 
@@ -23,7 +24,7 @@ import (
 )
 
 var accentTransformerPool = &sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
 	},
 }
@@ -44,4 +45,19 @@ func RemoveAccentsString(s string) string {
 	t.Reset()
 	accentTransformerPool.Put(t)
 	return s
+}
+
+// Chomp removes trailing newline characters from s.
+func Chomp(s string) string {
+	return strings.TrimRightFunc(s, func(r rune) bool {
+		return r == '\n' || r == '\r'
+	})
+}
+
+// Puts adds a trailing \n none found.
+func Puts(s string) string {
+	if s == "" || s[len(s)-1] == '\n' {
+		return s
+	}
+	return s + "\n"
 }

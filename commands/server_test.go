@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -24,22 +25,94 @@ import (
 
 	"github.com/gohugoio/hugo/config"
 	"github.com/gohugoio/hugo/helpers"
+	"golang.org/x/net/context"
+	"golang.org/x/sync/errgroup"
 
 	qt "github.com/frankban/quicktest"
 )
 
 func TestServer(t *testing.T) {
-	if isWindowsCI() {
-		// TODO(bep) not sure why server tests have started to fail on the Windows CI server.
-		t.Skip("Skip server test on appveyor")
-	}
 	c := qt.New(t)
-	dir, clean, err := createSimpleTestSite(t, testSiteConfig{})
-	defer clean()
-	c.Assert(err, qt.IsNil)
 
-	// Let us hope that this port is available on all systems ...
-	port := 1331
+	r := runServerTest(c, true, "")
+
+	c.Assert(r.err, qt.IsNil)
+	c.Assert(r.homeContent, qt.Contains, "List: Hugo Commands")
+	c.Assert(r.homeContent, qt.Contains, "Environment: development")
+}
+
+// Issue 9518
+func TestServerPanicOnConfigError(t *testing.T) {
+	c := qt.New(t)
+
+	config := `
+[markup]
+[markup.highlight]
+linenos='table'
+`
+
+	r := runServerTest(c, false, config)
+
+	c.Assert(r.err, qt.IsNotNil)
+	c.Assert(r.err.Error(), qt.Contains, "cannot parse 'Highlight.LineNos' as bool:")
+}
+
+func TestServerFlags(t *testing.T) {
+	c := qt.New(t)
+
+	assertPublic := func(c *qt.C, r serverTestResult, renderStaticToDisk bool) {
+		c.Assert(r.err, qt.IsNil)
+		c.Assert(r.homeContent, qt.Contains, "Environment: development")
+		c.Assert(r.publicDirnames["myfile.txt"], qt.Equals, renderStaticToDisk)
+
+	}
+
+	for _, test := range []struct {
+		flag   string
+		assert func(c *qt.C, r serverTestResult)
+	}{
+		{"", func(c *qt.C, r serverTestResult) {
+			assertPublic(c, r, false)
+		}},
+		{"--renderToDisk", func(c *qt.C, r serverTestResult) {
+			assertPublic(c, r, true)
+		}},
+		{"--renderStaticToDisk", func(c *qt.C, r serverTestResult) {
+			assertPublic(c, r, true)
+		}},
+	} {
+		c.Run(test.flag, func(c *qt.C) {
+			config := `
+baseURL="https://example.org"
+`
+
+			var args []string
+			if test.flag != "" {
+				args = strings.Split(test.flag, "=")
+			}
+
+			r := runServerTest(c, true, config, args...)
+
+			test.assert(c, r)
+
+		})
+
+	}
+
+}
+
+type serverTestResult struct {
+	err            error
+	homeContent    string
+	publicDirnames map[string]bool
+}
+
+func runServerTest(c *qt.C, getHome bool, config string, args ...string) (result serverTestResult) {
+	dir := createSimpleTestSite(c, testSiteConfig{configTOML: config})
+
+	sp, err := helpers.FindAvailablePort()
+	c.Assert(err, qt.IsNil)
+	port := sp.Port
 
 	defer func() {
 		os.RemoveAll(dir)
@@ -51,28 +124,49 @@ func TestServer(t *testing.T) {
 	scmd := b.newServerCmdSignaled(stop)
 
 	cmd := scmd.getCommand()
-	cmd.SetArgs([]string{"-s=" + dir, fmt.Sprintf("-p=%d", port)})
+	args = append([]string{"-s=" + dir, fmt.Sprintf("-p=%d", port)}, args...)
+	cmd.SetArgs(args)
 
-	go func() {
-		_, err = cmd.ExecuteC()
-		c.Assert(err, qt.IsNil)
-	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	wg, ctx := errgroup.WithContext(ctx)
 
-	// There is no way to know exactly when the server is ready for connections.
-	// We could improve by something like https://golang.org/pkg/net/http/httptest/#Server
-	// But for now, let us sleep and pray!
-	time.Sleep(2 * time.Second)
+	wg.Go(func() error {
+		_, err := cmd.ExecuteC()
+		return err
+	})
 
-	resp, err := http.Get("http://localhost:1331/")
-	c.Assert(err, qt.IsNil)
-	defer resp.Body.Close()
-	homeContent := helpers.ReaderToString(resp.Body)
+	if getHome {
+		// Esp. on slow CI machines, we need to wait a little before the web
+		// server is ready.
+		time.Sleep(567 * time.Millisecond)
+		resp, err := http.Get(fmt.Sprintf("http://localhost:%d/", port))
+		c.Check(err, qt.IsNil)
+		c.Check(resp.StatusCode, qt.Equals, http.StatusOK)
+		if err == nil {
+			defer resp.Body.Close()
+			result.homeContent = helpers.ReaderToString(resp.Body)
+		}
+	}
 
-	c.Assert(homeContent, qt.Contains, "List: Hugo Commands")
-	c.Assert(homeContent, qt.Contains, "Environment: development")
+	time.Sleep(1 * time.Second)
 
-	// Stop the server.
-	stop <- true
+	select {
+	case <-stop:
+	case stop <- true:
+	}
+
+	pubFiles, err := os.ReadDir(filepath.Join(dir, "public"))
+	c.Check(err, qt.IsNil)
+	result.publicDirnames = make(map[string]bool)
+	for _, f := range pubFiles {
+		result.publicDirnames[f.Name()] = true
+	}
+
+	result.err = wg.Wait()
+
+	return
+
 }
 
 func TestFixURL(t *testing.T) {
@@ -101,7 +195,7 @@ func TestFixURL(t *testing.T) {
 		t.Run(test.TestName, func(t *testing.T) {
 			b := newCommandsBuilder()
 			s := b.newServerCmd()
-			v := config.New()
+			v := config.NewWithTestDefaults()
 			baseURL := test.CLIBaseURL
 			v.Set("baseURL", test.CfgBaseURL)
 			s.serverAppend = test.AppendPort

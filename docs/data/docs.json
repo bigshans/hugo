@@ -1688,6 +1688,7 @@
         "style": "monokai",
         "codeFences": true,
         "noClasses": true,
+        "noHl": false,
         "lineNos": false,
         "lineNumbersInTable": true,
         "anchorLineNos": false,
@@ -1723,6 +1724,7 @@
           "table": true,
           "strikethrough": true,
           "linkify": true,
+          "linkifyProtocol": "https",
           "taskList": true
         }
       },
@@ -1842,7 +1844,7 @@
           "keepDocumentTags": true,
           "keepEndTags": true,
           "keepQuotes": false,
-          "keepWhitespace": true
+          "keepWhitespace": false
         },
         "css": {
           "keepCSS2": true,
@@ -1850,13 +1852,15 @@
         },
         "js": {
           "precision": 0,
-          "keepVarNames": false
+          "keepVarNames": false,
+          "noNullishOperator": false
         },
         "json": {
           "precision": 0,
           "keepNumbers": false
         },
         "svg": {
+          "keepComments": false,
           "precision": 0
         },
         "xml": {
@@ -3206,8 +3210,8 @@
           ],
           "Examples": [
             [
-              "{{ if eq .Section \"blog\" }}current{{ end }}",
-              "current"
+              "{{ if eq .Section \"blog\" }}current-section{{ end }}",
+              "current-section"
             ]
           ]
         },
@@ -3222,7 +3226,7 @@
           ],
           "Examples": [
             [
-              "{{ if ge .Hugo.Version \"0.36\" }}Reasonable new Hugo version!{{ end }}",
+              "{{ if ge hugo.Version \"0.80\" }}Reasonable new Hugo version!{{ end }}",
               "Reasonable new Hugo version!"
             ]
           ]
@@ -3297,6 +3301,7 @@
         "Apply": {
           "Description": "Apply takes a map, array, or slice and returns a new slice with the function fname applied over it.",
           "Args": [
+            "ctx",
             "seq",
             "fname",
             "args"
@@ -3645,7 +3650,8 @@
           "Args": [
             "h",
             "k",
-            "m"
+            "m",
+            "e"
           ],
           "Aliases": [
             "hmac"
@@ -3743,6 +3749,14 @@
               "map[string]interface {}{\n  \"Hugo\": \"Rocks!\",\n}"
             ]
           ]
+        }
+      },
+      "diagrams": {
+        "Goat": {
+          "Description": "",
+          "Args": null,
+          "Aliases": null,
+          "Examples": null
         }
       },
       "encoding": {
@@ -4255,6 +4269,12 @@
             ]
           ]
         },
+        "Counter": {
+          "Description": "",
+          "Args": null,
+          "Aliases": null,
+          "Examples": null
+        },
         "Div": {
           "Description": "Div divides two numbers.",
           "Args": [
@@ -4505,8 +4525,9 @@
       },
       "partials": {
         "Include": {
-          "Description": "Include executes the named partial.\nIf the partial contains a return statement, that value will be returned.\nElse, the rendered output will be returned:\nA string if the partial is a text/template, or template.HTML when html/template.",
+          "Description": "Include executes the named partial.\nIf the partial contains a return statement, that value will be returned.\nElse, the rendered output will be returned:\nA string if the partial is a text/template, or template.HTML when html/template.\nNote that ctx is provided by Hugo, not the end user.",
           "Args": [
+            "ctx",
             "name",
             "contextList"
           ],
@@ -4521,8 +4542,9 @@
           ]
         },
         "IncludeCached": {
-          "Description": "IncludeCached executes and caches partial templates.  The cache is created with name+variants as the key.",
+          "Description": "IncludeCached executes and caches partial templates.  The cache is created with name+variants as the key.\nNote that ctx is provided by Hugo, not the end user.",
           "Args": [
+            "ctx",
             "name",
             "context",
             "variants"
@@ -4644,6 +4666,12 @@
           ],
           "Examples": []
         },
+        "ByType": {
+          "Description": "",
+          "Args": null,
+          "Aliases": null,
+          "Examples": null
+        },
         "Concat": {
           "Description": "",
           "Args": null,
@@ -4673,7 +4701,7 @@
           "Examples": null
         },
         "Get": {
-          "Description": "Get locates the filename given in Hugo's assets filesystem and\ncreates a Resource object that can be used for\nfurther transformations.",
+          "Description": "Get locates the filename given in Hugo's assets filesystem\nand creates a Resource object that can be used for further transformations.",
           "Args": [
             "filename"
           ],
@@ -4841,7 +4869,19 @@
           "Aliases": null,
           "Examples": null
         },
+        "Current": {
+          "Description": "",
+          "Args": null,
+          "Aliases": null,
+          "Examples": null
+        },
         "Data": {
+          "Description": "",
+          "Args": null,
+          "Aliases": null,
+          "Examples": null
+        },
+        "Home": {
           "Description": "",
           "Args": null,
           "Aliases": null,
@@ -5418,6 +5458,12 @@
         }
       },
       "transform": {
+        "CanHighlight": {
+          "Description": "",
+          "Args": null,
+          "Aliases": null,
+          "Examples": null
+        },
         "Emojify": {
           "Description": "Emojify returns a copy of s with all emoji codes replaced with actual emojis.\n\nSee http://www.emoji-cheat-sheet.com/",
           "Args": [
@@ -5494,6 +5540,12 @@
             "highlight"
           ],
           "Examples": []
+        },
+        "HighlightCodeBlock": {
+          "Description": "",
+          "Args": null,
+          "Aliases": null,
+          "Examples": null
         },
         "Markdownify": {
           "Description": "Markdownify renders a given input from Markdown to HTML.",

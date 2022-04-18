@@ -14,7 +14,7 @@ hugo is the main command, used to build your Hugo site.
 Hugo is a Fast and Flexible Static Site Generator
 built with love by spf13 and friends in Go.
 
-Complete documentation is available at http://gohugo.io/.
+Complete documentation is available at https://gohugo.io/.
 
 ```
 hugo [flags]
@@ -23,7 +23,7 @@ hugo [flags]
 ### Options
 
 ```
-  -b, --baseURL string             hostname (and path) to the root, e.g. http://spf13.com/
+  -b, --baseURL string             hostname (and path) to the root, e.g. https://spf13.com/
   -D, --buildDrafts                include content marked as draft
   -E, --buildExpired               include expired content
   -F, --buildFuture                include content with publishdate in the future
@@ -35,7 +35,7 @@ hugo [flags]
       --debug                      debug output
   -d, --destination string         filesystem path to write files to
       --disableKinds strings       disable different kind of pages (home, RSS etc.)
-      --enableGitInfo              add Git revision, date and author info to the pages
+      --enableGitInfo              add Git revision, date, author, and CODEOWNERS info to the pages
   -e, --environment string         build environment
       --forceSyncStatic            copy all files when static is changed.
       --gc                         enable to run some cleanup tasks (remove unused cache files) after the build
@@ -69,7 +69,7 @@ hugo [flags]
 
 ### SEE ALSO
 
-* [hugo completion](/commands/hugo_completion/)	 - generate the autocompletion script for the specified shell
+* [hugo completion](/commands/hugo_completion/)	 - Generate the autocompletion script for the specified shell
 * [hugo config](/commands/hugo_config/)	 - Print the site configuration
 * [hugo convert](/commands/hugo_convert/)	 - Convert your content to different formats
 * [hugo deploy](/commands/hugo_deploy/)	 - Deploy your site to a Cloud provider.

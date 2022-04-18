@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/gohugoio/hugo/htesting"
-
 	"github.com/gohugoio/hugo/markup/asciidocext"
 	"github.com/gohugoio/hugo/markup/rst"
 
@@ -35,7 +34,6 @@ import (
 
 	"github.com/gohugoio/hugo/resources/page"
 	"github.com/gohugoio/hugo/resources/resource"
-	"github.com/spf13/afero"
 	"github.com/spf13/jwalterweatherman"
 
 	qt "github.com/frankban/quicktest"
@@ -298,7 +296,7 @@ func checkPageTitle(t *testing.T, page page.Page, title string) {
 	}
 }
 
-func checkPageContent(t *testing.T, page page.Page, expected string, msg ...interface{}) {
+func checkPageContent(t *testing.T, page page.Page, expected string, msg ...any) {
 	t.Helper()
 	a := normalizeContent(expected)
 	b := normalizeContent(content(page))
@@ -325,7 +323,7 @@ func checkPageTOC(t *testing.T, page page.Page, toc string) {
 	}
 }
 
-func checkPageSummary(t *testing.T, page page.Page, summary string, msg ...interface{}) {
+func checkPageSummary(t *testing.T, page page.Page, summary string, msg ...any) {
 	a := normalizeContent(string(page.Summary()))
 	b := normalizeContent(summary)
 	if a != b {
@@ -369,7 +367,7 @@ func normalizeExpected(ext, str string) string {
 }
 
 func testAllMarkdownEnginesForPages(t *testing.T,
-	assertFunc func(t *testing.T, ext string, pages page.Pages), settings map[string]interface{}, pageSources ...string) {
+	assertFunc func(t *testing.T, ext string, pages page.Pages), settings map[string]any, pageSources ...string) {
 
 	engines := []struct {
 		ext           string
@@ -399,8 +397,8 @@ func testAllMarkdownEnginesForPages(t *testing.T,
 				contentDir = s
 			}
 
-			cfg.Set("security", map[string]interface{}{
-				"exec": map[string]interface{}{
+			cfg.Set("security", map[string]any{
+				"exec": map[string]any{
 					"allow": []string{"^python$", "^rst2html.*", "^asciidoctor$"},
 				},
 			})
@@ -428,8 +426,7 @@ func testAllMarkdownEnginesForPages(t *testing.T,
 
 			assertFunc(t, e.ext, s.RegularPages())
 
-			home, err := s.Info.Home()
-			b.Assert(err, qt.IsNil)
+			home := s.Info.Home()
 			b.Assert(home, qt.Not(qt.IsNil))
 			b.Assert(home.File().Path(), qt.Equals, homePath)
 			b.Assert(content(home), qt.Contains, "Home Page Content")
@@ -573,7 +570,7 @@ func TestCreateNewPage(t *testing.T) {
 		checkPageType(t, p, "page")
 	}
 
-	settings := map[string]interface{}{
+	settings := map[string]any{
 		"contentDir": "mycontent",
 	}
 
@@ -698,7 +695,7 @@ func TestPageWithShortCodeInSummary(t *testing.T) {
 func TestPageWithAdditionalExtension(t *testing.T) {
 	t.Parallel()
 	cfg, fs := newTestCfg()
-	cfg.Set("markup", map[string]interface{}{
+	cfg.Set("markup", map[string]any{
 		"defaultMarkdownHandler": "blackfriday", // TODO(bep)
 	})
 
@@ -1032,26 +1029,26 @@ func TestPageWithLastmodFromGitInfo(t *testing.T) {
 	}
 	c := qt.New(t)
 
-	// We need to use the OS fs for this.
-	cfg := config.New()
-	fs := hugofs.NewFrom(hugofs.Os, cfg)
-	fs.Destination = &afero.MemMapFs{}
-
 	wd, err := os.Getwd()
 	c.Assert(err, qt.IsNil)
 
-	cfg.Set("frontmatter", map[string]interface{}{
+	// We need to use the OS fs for this.
+	cfg := config.NewWithTestDefaults()
+	cfg.Set("workingDir", filepath.Join(wd, "testsite"))
+	fs := hugofs.NewFrom(hugofs.Os, cfg)
+
+	cfg.Set("frontmatter", map[string]any{
 		"lastmod": []string{":git", "lastmod"},
 	})
 	cfg.Set("defaultContentLanguage", "en")
 
-	langConfig := map[string]interface{}{
-		"en": map[string]interface{}{
+	langConfig := map[string]any{
+		"en": map[string]any{
 			"weight":       1,
 			"languageName": "English",
 			"contentDir":   "content",
 		},
-		"nn": map[string]interface{}{
+		"nn": map[string]any{
 			"weight":       2,
 			"languageName": "Nynorsk",
 			"contentDir":   "content_nn",
@@ -1060,8 +1057,6 @@ func TestPageWithLastmodFromGitInfo(t *testing.T) {
 
 	cfg.Set("languages", langConfig)
 	cfg.Set("enableGitInfo", true)
-
-	cfg.Set("workingDir", filepath.Join(wd, "testsite"))
 
 	b := newTestSitesBuilderFromDepsCfg(t, deps.DepsCfg{Fs: fs, Cfg: cfg}).WithNothingAdded()
 
@@ -1075,12 +1070,14 @@ func TestPageWithLastmodFromGitInfo(t *testing.T) {
 
 	// 2018-03-11 is the Git author date for testsite/content/first-post.md
 	c.Assert(enSite.RegularPages()[0].Lastmod().Format("2006-01-02"), qt.Equals, "2018-03-11")
+	c.Assert(enSite.RegularPages()[0].CodeOwners()[0], qt.Equals, "@bep")
 
 	nnSite := h.Sites[1]
 	c.Assert(len(nnSite.RegularPages()), qt.Equals, 1)
 
 	// 2018-08-11 is the Git author date for testsite/content_nn/first-post.md
 	c.Assert(nnSite.RegularPages()[0].Lastmod().Format("2006-01-02"), qt.Equals, "2018-08-11")
+	c.Assert(enSite.RegularPages()[0].CodeOwners()[0], qt.Equals, "@bep")
 }
 
 func TestPageWithFrontMatterConfig(t *testing.T) {
@@ -1101,7 +1098,7 @@ lastMod: 2018-02-28
 Content
 `
 
-			cfg.Set("frontmatter", map[string]interface{}{
+			cfg.Set("frontmatter", map[string]any{
 				"date": []string{dateHandler, "date"},
 			})
 
@@ -1162,7 +1159,7 @@ func TestWordCountWithAllCJKRunesWithoutHasCJKLanguage(t *testing.T) {
 
 func TestWordCountWithAllCJKRunesHasCJKLanguage(t *testing.T) {
 	t.Parallel()
-	settings := map[string]interface{}{"hasCJKLanguage": true}
+	settings := map[string]any{"hasCJKLanguage": true}
 
 	assertFunc := func(t *testing.T, ext string, pages page.Pages) {
 		p := pages[0]
@@ -1175,7 +1172,7 @@ func TestWordCountWithAllCJKRunesHasCJKLanguage(t *testing.T) {
 
 func TestWordCountWithMainEnglishWithCJKRunes(t *testing.T) {
 	t.Parallel()
-	settings := map[string]interface{}{"hasCJKLanguage": true}
+	settings := map[string]any{"hasCJKLanguage": true}
 
 	assertFunc := func(t *testing.T, ext string, pages page.Pages) {
 		p := pages[0]
@@ -1194,7 +1191,7 @@ func TestWordCountWithMainEnglishWithCJKRunes(t *testing.T) {
 
 func TestWordCountWithIsCJKLanguageFalse(t *testing.T) {
 	t.Parallel()
-	settings := map[string]interface{}{
+	settings := map[string]any{
 		"hasCJKLanguage": true,
 	}
 
@@ -1284,7 +1281,7 @@ func TestTranslationKey(t *testing.T) {
 
 	c.Assert(len(s.RegularPages()), qt.Equals, 2)
 
-	home, _ := s.Info.Home()
+	home := s.Info.Home()
 	c.Assert(home, qt.Not(qt.IsNil))
 	c.Assert(home.TranslationKey(), qt.Equals, "home")
 	c.Assert(s.RegularPages()[0].TranslationKey(), qt.Equals, "page/k1")
@@ -1313,7 +1310,7 @@ func TestChompBOM(t *testing.T) {
 
 func TestPageWithEmoji(t *testing.T) {
 	for _, enableEmoji := range []bool{true, false} {
-		v := config.New()
+		v := config.NewWithTestDefaults()
 		v.Set("enableEmoji", enableEmoji)
 
 		b := newTestSitesBuilder(t).WithViper(v)
@@ -1652,11 +1649,11 @@ tags:
 				th.assertFileContent(pathFunc("public/post/test0.dot/index.html"), "some content")
 
 				if uglyURLs {
-					th.assertFileContent("public/post/page/1.html", `canonical" href="/post.html"/`)
+					th.assertFileContent("public/post/page/1.html", `canonical" href="/post.html"`)
 					th.assertFileContent("public/post.html", `<body>P1|URL: /post.html|Next: /post/page/2.html</body>`)
 					th.assertFileContent("public/post/page/2.html", `<body>P2|URL: /post/page/2.html|Next: /post/page/3.html</body>`)
 				} else {
-					th.assertFileContent("public/post/page/1/index.html", `canonical" href="/post/"/`)
+					th.assertFileContent("public/post/page/1/index.html", `canonical" href="/post/"`)
 					th.assertFileContent("public/post/index.html", `<body>P1|URL: /post/|Next: /post/page/2/</body>`)
 					th.assertFileContent("public/post/page/2/index.html", `<body>P2|URL: /post/page/2/|Next: /post/page/3/</body>`)
 					th.assertFileContent("public/tags/.net/index.html", `<body>P1|URL: /tags/.net/|Next: /tags/.net/page/2/</body>`)
@@ -1769,7 +1766,7 @@ Summary: In Chinese, 好 means good.
 	b.AssertFileContent("public/p6/index.html", "WordCount: 7\nFuzzyWordCount: 100\nReadingTime: 1\nLen Plain: 638\nLen PlainWords: 7\nTruncated: false\nLen Summary: 637\nLen Content: 652")
 }
 
-func TestScratchSite(t *testing.T) {
+func TestScratch(t *testing.T) {
 	t.Parallel()
 
 	b := newTestSitesBuilder(t)
@@ -1794,6 +1791,50 @@ title: Scratch Me!
 
 	b.AssertFileContent("public/index.html", "B: bv")
 	b.AssertFileContent("public/scratchme/index.html", "C: cv")
+}
+
+func TestScratchRebuild(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- config.toml --
+-- content/p1.md --
+---
+title: "p1"
+---
+{{< scratchme >}}
+-- layouts/shortcodes/foo.html --
+notused
+-- layouts/shortcodes/scratchme.html --
+{{ .Page.Scratch.Set "scratch" "foo" }}
+{{ .Page.Store.Set "scratch" "bar" }}
+-- layouts/_default/single.html --
+{{ .Content }}
+Scratch: {{ .Scratch.Get "scratch" }}|
+Store: {{ .Store.Get "scratch" }}|
+`
+
+	b := NewIntegrationTestBuilder(
+		IntegrationTestConfig{
+			T:           t,
+			TxtarString: files,
+			Running:     true,
+		},
+	).Build()
+
+	b.AssertFileContent("public/p1/index.html", `
+Scratch: foo|
+Store: bar|
+	`)
+
+	b.EditFiles("layouts/shortcodes/foo.html", "edit")
+
+	b.Build()
+
+	b.AssertFileContent("public/p1/index.html", `
+Scratch: |
+Store: bar|
+	`)
 }
 
 func TestPageParam(t *testing.T) {

@@ -25,7 +25,7 @@ hugo new [path] [flags]
 ### Options
 
 ```
-  -b, --baseURL string         hostname (and path) to the root, e.g. http://spf13.com/
+  -b, --baseURL string         hostname (and path) to the root, e.g. https://spf13.com/
   -D, --buildDrafts            include content marked as draft
   -E, --buildExpired           include expired content
   -F, --buildFuture            include content with publishdate in the future
@@ -35,7 +35,7 @@ hugo new [path] [flags]
   -d, --destination string     filesystem path to write files to
       --disableKinds strings   disable different kind of pages (home, RSS etc.)
       --editor string          edit new content with this editor, if provided
-      --enableGitInfo          add Git revision, date and author info to the pages
+      --enableGitInfo          add Git revision, date, author, and CODEOWNERS info to the pages
       --forceSyncStatic        copy all files when static is changed.
       --gc                     enable to run some cleanup tasks (remove unused cache files) after the build
   -h, --help                   help for new

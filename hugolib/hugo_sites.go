@@ -73,12 +73,16 @@ type HugoSites struct {
 	// Render output formats for all sites.
 	renderFormats output.Formats
 
+	// The currently rendered Site.
+	currentSite *Site
+
 	*deps.Deps
 
-	gitInfo *gitInfo
+	gitInfo       *gitInfo
+	codeownerInfo *codeownerInfo
 
 	// As loaded from the /data dirs
-	data map[string]interface{}
+	data map[string]any
 
 	contentInit sync.Once
 	content     *pageMaps
@@ -174,7 +178,7 @@ type hugoSitesInit struct {
 	// Performs late initialization (before render) of the templates.
 	layouts *lazy.Init
 
-	// Loads the Git info for all the pages if enabled.
+	// Loads the Git info and CODEOWNERS for all the pages if enabled.
 	gitInfo *lazy.Init
 
 	// Maps page translations.
@@ -188,7 +192,7 @@ func (h *hugoSitesInit) Reset() {
 	h.translations.Reset()
 }
 
-func (h *HugoSites) Data() map[string]interface{} {
+func (h *HugoSites) Data() map[string]any {
 	if _, err := h.init.data.Do(); err != nil {
 		h.SendError(errors.Wrap(err, "failed to load data"))
 		return nil
@@ -206,6 +210,18 @@ func (h *HugoSites) gitInfoForPage(p page.Page) (*gitmap.GitInfo, error) {
 	}
 
 	return h.gitInfo.forPage(p), nil
+}
+
+func (h *HugoSites) codeownersForPage(p page.Page) ([]string, error) {
+	if _, err := h.init.gitInfo.Do(); err != nil {
+		return nil, err
+	}
+
+	if h.codeownerInfo == nil {
+		return nil, nil
+	}
+
+	return h.codeownerInfo.forPage(p), nil
 }
 
 func (h *HugoSites) siteInfos() page.Sites {
@@ -346,7 +362,7 @@ func newHugoSites(cfg deps.DepsCfg, sites ...*Site) (*HugoSites, error) {
 		donec: make(chan bool),
 	}
 
-	h.init.data.Add(func() (interface{}, error) {
+	h.init.data.Add(func() (any, error) {
 		err := h.loadData(h.PathSpec.BaseFs.Data.Dirs)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to load data")
@@ -354,7 +370,7 @@ func newHugoSites(cfg deps.DepsCfg, sites ...*Site) (*HugoSites, error) {
 		return nil, nil
 	})
 
-	h.init.layouts.Add(func() (interface{}, error) {
+	h.init.layouts.Add(func() (any, error) {
 		for _, s := range h.Sites {
 			if err := s.Tmpl().(tpl.TemplateManager).MarkReady(); err != nil {
 				return nil, err
@@ -363,7 +379,7 @@ func newHugoSites(cfg deps.DepsCfg, sites ...*Site) (*HugoSites, error) {
 		return nil, nil
 	})
 
-	h.init.translations.Add(func() (interface{}, error) {
+	h.init.translations.Add(func() (any, error) {
 		if len(h.Sites) > 1 {
 			allTranslations := pagesToTranslationsMap(h.Sites)
 			assignTranslationsToPages(allTranslations, h.Sites)
@@ -372,7 +388,7 @@ func newHugoSites(cfg deps.DepsCfg, sites ...*Site) (*HugoSites, error) {
 		return nil, nil
 	})
 
-	h.init.gitInfo.Add(func() (interface{}, error) {
+	h.init.gitInfo.Add(func() (any, error) {
 		err := h.loadGitInfo()
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to load Git info")
@@ -390,6 +406,9 @@ func newHugoSites(cfg deps.DepsCfg, sites ...*Site) (*HugoSites, error) {
 	}
 
 	h.Deps = sites[0].Deps
+	if h.Deps == nil {
+		return nil, initErr
+	}
 
 	// Only needed in server mode.
 	// TODO(bep) clean up the running vs watching terms
@@ -413,6 +432,13 @@ func (h *HugoSites) loadGitInfo() error {
 			h.Log.Errorln("Failed to read Git log:", err)
 		} else {
 			h.gitInfo = gi
+		}
+
+		co, err := newCodeOwners(h.Cfg)
+		if err != nil {
+			h.Log.Errorln("Failed to read CODEOWNERS:", err)
+		} else {
+			h.codeownerInfo = co
 		}
 	}
 	return nil
@@ -571,7 +597,7 @@ func (h *HugoSites) reset(config *BuildCfg) {
 	if config.ResetState {
 		for i, s := range h.Sites {
 			h.Sites[i] = s.reset()
-			if r, ok := s.Fs.Destination.(hugofs.Reseter); ok {
+			if r, ok := s.Fs.PublishDir.(hugofs.Reseter); ok {
 				r.Reset()
 			}
 		}
@@ -834,7 +860,7 @@ func (h *HugoSites) Pages() page.Pages {
 func (h *HugoSites) loadData(fis []hugofs.FileMetaInfo) (err error) {
 	spec := source.NewSourceSpec(h.PathSpec, nil, nil)
 
-	h.data = make(map[string]interface{})
+	h.data = make(map[string]any)
 	for _, fi := range fis {
 		fileSystem := spec.NewFilesystemFromFileMetaInfo(fi)
 		files, err := fileSystem.Files()
@@ -852,7 +878,7 @@ func (h *HugoSites) loadData(fis []hugofs.FileMetaInfo) (err error) {
 }
 
 func (h *HugoSites) handleDataFile(r source.File) error {
-	var current map[string]interface{}
+	var current map[string]any
 
 	f, err := r.FileInfo().Meta().Open()
 	if err != nil {
@@ -867,9 +893,9 @@ func (h *HugoSites) handleDataFile(r source.File) error {
 	for _, key := range keyParts {
 		if key != "" {
 			if _, ok := current[key]; !ok {
-				current[key] = make(map[string]interface{})
+				current[key] = make(map[string]any)
 			}
-			current = current[key].(map[string]interface{})
+			current = current[key].(map[string]any)
 		}
 	}
 
@@ -887,16 +913,16 @@ func (h *HugoSites) handleDataFile(r source.File) error {
 
 	switch data.(type) {
 	case nil:
-	case map[string]interface{}:
+	case map[string]any:
 
 		switch higherPrecedentData.(type) {
 		case nil:
 			current[r.BaseFileName()] = data
-		case map[string]interface{}:
+		case map[string]any:
 			// merge maps: insert entries from data for keys that
 			// don't already exist in higherPrecedentData
-			higherPrecedentMap := higherPrecedentData.(map[string]interface{})
-			for key, value := range data.(map[string]interface{}) {
+			higherPrecedentMap := higherPrecedentData.(map[string]any)
+			for key, value := range data.(map[string]any) {
 				if _, exists := higherPrecedentMap[key]; exists {
 					// this warning could happen if
 					// 1. A theme uses the same key; the main data folder wins
@@ -913,7 +939,7 @@ func (h *HugoSites) handleDataFile(r source.File) error {
 				"higher precedence %T data already in the data tree", data, r.Path(), higherPrecedentData)
 		}
 
-	case []interface{}:
+	case []any:
 		if higherPrecedentData == nil {
 			current[r.BaseFileName()] = data
 		} else {
@@ -947,7 +973,7 @@ func (h *HugoSites) errWithFileContext(err error, f source.File) error {
 	return err
 }
 
-func (h *HugoSites) readData(f source.File) (interface{}, error) {
+func (h *HugoSites) readData(f source.File) (any, error) {
 	file, err := f.FileInfo().Meta().Open()
 	if err != nil {
 		return nil, errors.Wrap(err, "readData: failed to open data file")
@@ -955,7 +981,7 @@ func (h *HugoSites) readData(f source.File) (interface{}, error) {
 	defer file.Close()
 	content := helpers.ReaderToBytes(file)
 
-	format := metadecoders.FormatFromString(f.Extension())
+	format := metadecoders.FormatFromString(f.Ext())
 	return metadecoders.Default.Unmarshal(content, format)
 }
 
