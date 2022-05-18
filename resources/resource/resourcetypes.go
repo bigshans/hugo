@@ -14,12 +14,9 @@
 package resource
 
 import (
-	"image"
-
 	"github.com/gohugoio/hugo/common/maps"
 	"github.com/gohugoio/hugo/langs"
 	"github.com/gohugoio/hugo/media"
-	"github.com/gohugoio/hugo/resources/images/exif"
 
 	"github.com/gohugoio/hugo/common/hugio"
 )
@@ -82,26 +79,6 @@ type Resource interface {
 	ErrProvider
 }
 
-// Image represents an image resource.
-type Image interface {
-	Resource
-	ImageOps
-}
-
-type ImageOps interface {
-	Height() int
-	Width() int
-	Crop(spec string) (Image, error)
-	Fill(spec string) (Image, error)
-	Fit(spec string) (Image, error)
-	Resize(spec string) (Image, error)
-	Filter(filters ...any) (Image, error)
-	Exif() *exif.Exif
-
-	// Internal
-	DecodeImage() (image.Image, error)
-}
-
 type ResourceTypeProvider interface {
 	// ResourceType is the resource type. For most file types, this is the main
 	// part of the MIME type, e.g. "image", "application", "text" etc.
@@ -155,7 +132,9 @@ type ResourceDataProvider interface {
 // different language.
 type ResourcesLanguageMerger interface {
 	MergeByLanguage(other Resources) Resources
+
 	// Needed for integration with the tpl package.
+	// For internal use.
 	MergeByLanguageInterface(other any) (any, error)
 }
 
