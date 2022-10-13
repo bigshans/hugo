@@ -168,6 +168,14 @@ func (sc *serverCmd) server(cmd *cobra.Command, args []string) error {
 			c.Set("watch", true)
 		}
 
+		// TODO(bep) see issue 9901
+		// cfgInit is called twice, before and after the languages have been initialized.
+		// The servers (below) can not be initialized before we
+		// know if we're configured in a multihost setup.
+		if len(c.languages) == 0 {
+			return nil
+		}
+
 		// We can only do this once.
 		serverCfgInit.Do(func() {
 			c.serverPorts = make([]serverPortListener, 1)
@@ -262,10 +270,6 @@ func (sc *serverCmd) server(cmd *cobra.Command, args []string) error {
 	}()
 	if err != nil {
 		return err
-	}
-
-	for _, s := range c.hugo().Sites {
-		s.RegisterMediaTypes()
 	}
 
 	// Watch runs its own server as part of the routine
@@ -396,24 +400,31 @@ func (f *fileServer) createEndpoint(i int) (*http.ServeMux, net.Listener, string
 			}
 
 			// Ignore any query params for the operations below.
-			requestURI := strings.TrimSuffix(r.RequestURI, "?"+r.URL.RawQuery)
+			requestURI, _ := url.PathUnescape(strings.TrimSuffix(r.RequestURI, "?"+r.URL.RawQuery))
 
 			for _, header := range f.c.serverConfig.MatchHeaders(requestURI) {
 				w.Header().Set(header.Key, header.Value)
 			}
 
 			if redirect := f.c.serverConfig.MatchRedirect(requestURI); !redirect.IsZero() {
+				// fullName := filepath.Join(dir, filepath.FromSlash(path.Clean("/"+name)))
 				doRedirect := true
 				// This matches Netlify's behaviour and is needed for SPA behaviour.
 				// See https://docs.netlify.com/routing/redirects/rewrites-proxies/
 				if !redirect.Force {
 					path := filepath.Clean(strings.TrimPrefix(requestURI, u.Path))
-					fi, err := f.c.hugo().BaseFs.PublishFs.Stat(path)
+					if root != "" {
+						path = filepath.Join(root, path)
+					}
+					fs := f.c.publishDirServerFs
+
+					fi, err := fs.Stat(path)
+
 					if err == nil {
 						if fi.IsDir() {
 							// There will be overlapping directories, so we
 							// need to check for a file.
-							_, err = f.c.hugo().BaseFs.PublishFs.Stat(filepath.Join(path, "index.html"))
+							_, err = fs.Stat(filepath.Join(path, "index.html"))
 							doRedirect = err != nil
 						} else {
 							doRedirect = false
@@ -422,15 +433,28 @@ func (f *fileServer) createEndpoint(i int) (*http.ServeMux, net.Listener, string
 				}
 
 				if doRedirect {
-					if redirect.Status == 200 {
+					switch redirect.Status {
+					case 404:
+						w.WriteHeader(404)
+						file, err := fs.Open(strings.TrimPrefix(redirect.To, u.Path))
+						if err == nil {
+							defer file.Close()
+							io.Copy(w, file)
+						} else {
+							fmt.Fprintln(w, "<h1>Page Not Found</h1>")
+						}
+						return
+					case 200:
 						if r2 := f.rewriteRequest(r, strings.TrimPrefix(redirect.To, u.Path)); r2 != nil {
 							requestURI = redirect.To
 							r = r2
 						}
-					} else {
+						fallthrough
+					default:
 						w.Header().Set("Content-Type", "")
 						http.Redirect(w, r, redirect.To, redirect.Status)
 						return
+
 					}
 				}
 

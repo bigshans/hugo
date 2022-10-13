@@ -1,4 +1,4 @@
-// Copyright 2019 The Hugo Authors. All rights reserved.
+// Copyright 2022 The Hugo Authors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/gohugoio/hugo/resources/internal"
@@ -120,8 +121,22 @@ func (t transformerNotAvailable) Key() internal.ResourceTransformationKey {
 	return t.key
 }
 
+// resourceCopier is for internal use.
+type resourceCopier interface {
+	cloneTo(targetPath string) resource.Resource
+}
+
+// Copy copies r to the targetPath given.
+func Copy(r resource.Resource, targetPath string) resource.Resource {
+	if r.Err() != nil {
+		panic(fmt.Sprintf("Resource has an .Err: %s", r.Err()))
+	}
+	return r.(resourceCopier).cloneTo(targetPath)
+}
+
 type baseResourceResource interface {
 	resource.Cloner
+	resourceCopier
 	resource.ContentProvider
 	resource.Resource
 	resource.Identifier
@@ -225,6 +240,20 @@ func (l *genericResource) Clone() resource.Resource {
 	return l.clone()
 }
 
+func (l *genericResource) cloneTo(targetPath string) resource.Resource {
+	c := l.clone()
+
+	targetPath = helpers.ToSlashTrimLeading(targetPath)
+	dir, file := path.Split(targetPath)
+
+	c.resourcePathDescriptor = &resourcePathDescriptor{
+		relTargetDirFile: dirFile{dir: dir, file: file},
+	}
+
+	return c
+
+}
+
 func (l *genericResource) Content() (any, error) {
 	if err := l.initContent(); err != nil {
 		return nil, err
@@ -242,7 +271,10 @@ func (l *genericResource) Data() any {
 }
 
 func (l *genericResource) Key() string {
-	return l.RelPermalink()
+	if l.spec.BasePath == "" {
+		return l.RelPermalink()
+	}
+	return strings.TrimPrefix(l.RelPermalink(), l.spec.BasePath)
 }
 
 func (l *genericResource) MediaType() media.Type {

@@ -26,6 +26,7 @@ import (
 	"github.com/gohugoio/hugo/htesting"
 	"github.com/gohugoio/hugo/markup/asciidocext"
 	"github.com/gohugoio/hugo/markup/rst"
+	"github.com/gohugoio/hugo/tpl"
 
 	"github.com/gohugoio/hugo/config"
 
@@ -40,7 +41,6 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	"github.com/gohugoio/hugo/deps"
-	"github.com/gohugoio/hugo/helpers"
 )
 
 const (
@@ -240,16 +240,6 @@ the cylinder and strike me down. ## BB
 "You're a great Granser," he cried delightedly, "always making believe them little marks mean something."
 `
 
-	simplePageWithAdditionalExtension = `+++
-[blackfriday]
-  extensions = ["hardLineBreak"]
-+++
-first line.
-second line.
-
-fourth line.
-`
-
 	simplePageWithURL = `---
 title: Simple
 url: simple/url/
@@ -351,7 +341,7 @@ func normalizeExpected(ext, str string) string {
 	default:
 		return str
 	case "html":
-		return strings.Trim(helpers.StripHTML(str), " ")
+		return strings.Trim(tpl.StripHTML(str), " ")
 	case "ad":
 		paragraphs := strings.Split(str, "</p>")
 		expected := ""
@@ -692,26 +682,6 @@ func TestPageWithShortCodeInSummary(t *testing.T) {
 	}
 
 	testAllMarkdownEnginesForPages(t, assertFunc, nil, simplePageWithShortcodeInSummary)
-}
-
-func TestPageWithAdditionalExtension(t *testing.T) {
-	t.Parallel()
-	cfg, fs := newTestCfg()
-	cfg.Set("markup", map[string]any{
-		"defaultMarkdownHandler": "blackfriday", // TODO(bep)
-	})
-
-	c := qt.New(t)
-
-	writeSource(t, fs, filepath.Join("content", "simple.md"), simplePageWithAdditionalExtension)
-
-	s := buildSingleSite(t, deps.DepsCfg{Fs: fs, Cfg: cfg}, BuildCfg{SkipRender: true})
-
-	c.Assert(len(s.RegularPages()), qt.Equals, 1)
-
-	p := s.RegularPages()[0]
-
-	checkPageContent(t, p, "<p>first line.<br />\nsecond line.</p>\n\n<p>fourth line.</p>\n")
 }
 
 func TestTableOfContents(t *testing.T) {
@@ -1373,7 +1343,7 @@ title: "HTML Content"
 ---
 `
 	b.WithContent("regular.html", frontmatter+`<h1>Hugo</h1>`)
-	b.WithContent("noblackfridayforyou.html", frontmatter+`**Hugo!**`)
+	b.WithContent("nomarkdownforyou.html", frontmatter+`**Hugo!**`)
 	b.WithContent("manualsummary.html", frontmatter+`
 <p>This is summary</p>
 <!--more-->
@@ -1387,8 +1357,8 @@ title: "HTML Content"
 		"Summary: Hugo|Truncated: false")
 
 	b.AssertFileContent(
-		"public/noblackfridayforyou/index.html",
-		"Permalink: http://example.com/noblackfridayforyou/|**Hugo!**|",
+		"public/nomarkdownforyou/index.html",
+		"Permalink: http://example.com/nomarkdownforyou/|**Hugo!**|",
 	)
 
 	// https://github.com/gohugoio/hugo/issues/5723
@@ -1736,6 +1706,7 @@ Len Summary: {{ len .Summary }}
 Len Content: {{ len .Content }}
 
 SUMMARY:{{ .Summary }}:{{ len .Summary }}:END
+
 `}
 
 	b := newTestSitesBuilder(t)
@@ -2008,74 +1979,6 @@ Link with URL as text
 <code class="language-bash" data-lang="bash"><span class="line hl"><span class="cl">MARKDOWN
 <p><a href="https://google.com">https://google.com</a></p>
 `)
-}
-
-func TestBlackfridayDefault(t *testing.T) {
-	t.Parallel()
-
-	b := newTestSitesBuilder(t).WithConfigFile("toml", `
-baseURL = "https://example.org"
-
-[markup]
-defaultMarkdownHandler="blackfriday"
-[markup.highlight]
-noClasses=false
-[markup.goldmark]
-[markup.goldmark.renderer]
-unsafe=true
-
-
-`)
-	// Use the new attribute syntax to make sure it's not Goldmark.
-	b.WithTemplatesAdded("_default/single.html", `
-Title: {{ .Title }}
-Content: {{ .Content }}
-
-`, "shortcodes/s.html", `## Code
-{{ .Inner }}
-`)
-
-	content := `
-+++
-title = "A Page!"
-+++
-
-
-## Code Fense in Shortcode
-
-{{% s %}}
-S:
-{{% s %}}
-$$$bash {hl_lines=[1]}
-SHORT
-$$$
-{{% /s %}}
-{{% /s %}}
-
-## Code Fence
-
-$$$bash {hl_lines=[1]}
-MARKDOWN
-$$$
-
-`
-	content = strings.ReplaceAll(content, "$$$", "```")
-
-	for i, ext := range []string{"md", "html"} {
-		b.WithContent(fmt.Sprintf("page%d.%s", i+1, ext), content)
-	}
-
-	b.Build(BuildCfg{})
-
-	// Blackfriday does not support this extended attribute syntax.
-	b.AssertFileContent("public/page1/index.html",
-		`<pre tabindex="0"><code class="language-bash {hl_lines=[1]}" data-lang="bash {hl_lines=[1]}">SHORT</code></pre>`,
-		`<pre tabindex="0"><code class="language-bash {hl_lines=[1]}" data-lang="bash {hl_lines=[1]}">MARKDOWN`,
-	)
-
-	b.AssertFileContent("public/page2/index.html",
-		`<pre tabindex="0"><code class="language-bash {hl_lines=[1]}" data-lang="bash {hl_lines=[1]}">SHORT`,
-	)
 }
 
 func TestPageCaseIssues(t *testing.T) {

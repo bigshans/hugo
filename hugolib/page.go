@@ -39,8 +39,6 @@ import (
 	"github.com/gohugoio/hugo/common/herrors"
 	"github.com/gohugoio/hugo/parser/metadecoders"
 
-	"errors"
-
 	"github.com/gohugoio/hugo/parser/pageparser"
 
 	"github.com/gohugoio/hugo/output"
@@ -336,7 +334,7 @@ func (p *pageState) HasShortcode(name string) bool {
 		return false
 	}
 
-	return p.shortcodeState.nameSet[name]
+	return p.shortcodeState.hasName(name)
 }
 
 func (p *pageState) Site() page.Site {
@@ -600,7 +598,7 @@ func (p *pageState) getContentConverter() converter.Converter {
 			// Only used for shortcode inner content.
 			markup = "markdown"
 		}
-		p.m.contentConverter, err = p.m.newContentConverter(p, markup, p.m.renderingConfigOverrides)
+		p.m.contentConverter, err = p.m.newContentConverter(p, markup)
 	})
 
 	if err != nil {
@@ -610,19 +608,36 @@ func (p *pageState) getContentConverter() converter.Converter {
 }
 
 func (p *pageState) mapContent(bucket *pagesMapBucket, meta *pageMeta) error {
-	s := p.shortcodeState
-
-	rn := &pageContentMap{
+	p.cmap = &pageContentMap{
 		items: make([]any, 0, 20),
 	}
 
-	iter := p.source.parsed.Iterator()
+	return p.mapContentForResult(
+		p.source.parsed,
+		p.shortcodeState,
+		p.cmap,
+		meta.markup,
+		func(m map[string]interface{}) error {
+			return meta.setMetadata(bucket, p, m)
+		},
+	)
+}
+
+func (p *pageState) mapContentForResult(
+	result pageparser.Result,
+	s *shortcodeHandler,
+	rn *pageContentMap,
+	markup string,
+	withFrontMatter func(map[string]any) error,
+) error {
+
+	iter := result.Iterator()
 
 	fail := func(err error, i pageparser.Item) error {
 		if fe, ok := err.(herrors.FileError); ok {
 			return fe
 		}
-		return p.parseError(err, iter.Input(), i.Pos)
+		return p.parseError(err, result.Input(), i.Pos())
 	}
 
 	// the parser is guaranteed to return items in proper order or fail, so …
@@ -639,14 +654,14 @@ Loop:
 		case it.Type == pageparser.TypeIgnore:
 		case it.IsFrontMatter():
 			f := pageparser.FormatFromFrontMatterType(it.Type)
-			m, err := metadecoders.Default.UnmarshalToMap(it.Val, f)
+			m, err := metadecoders.Default.UnmarshalToMap(it.Val(result.Input()), f)
 			if err != nil {
 				if fe, ok := err.(herrors.FileError); ok {
 					pos := fe.Position()
 					// Apply the error to the content file.
 					pos.Filename = p.File().Filename()
 					// Offset the starting position of front matter.
-					offset := iter.LineNumber() - 1
+					offset := iter.LineNumber(result.Input()) - 1
 					if f == metadecoders.YAML {
 						offset -= 1
 					}
@@ -660,15 +675,17 @@ Loop:
 				}
 			}
 
-			if err := meta.setMetadata(bucket, p, m); err != nil {
-				return err
+			if withFrontMatter != nil {
+				if err := withFrontMatter(m); err != nil {
+					return err
+				}
 			}
 
 			frontMatterSet = true
 
 			next := iter.Peek()
 			if !next.IsDone() {
-				p.source.posMainContent = next.Pos
+				p.source.posMainContent = next.Pos()
 			}
 
 			if !p.s.shouldBuild(p) {
@@ -680,10 +697,10 @@ Loop:
 			posBody := -1
 			f := func(item pageparser.Item) bool {
 				if posBody == -1 && !item.IsDone() {
-					posBody = item.Pos
+					posBody = item.Pos()
 				}
 
-				if item.IsNonWhitespace() {
+				if item.IsNonWhitespace(result.Input()) {
 					p.truncated = true
 
 					// Done
@@ -693,12 +710,12 @@ Loop:
 			}
 			iter.PeekWalk(f)
 
-			p.source.posSummaryEnd = it.Pos
+			p.source.posSummaryEnd = it.Pos()
 			p.source.posBodyStart = posBody
 			p.source.hasSummaryDivider = true
 
-			if meta.markup != "html" {
-				// The content will be rendered by Blackfriday or similar,
+			if markup != "html" {
+				// The content will be rendered by Goldmark or similar,
 				// and we need to track the summary.
 				rn.AddReplacement(internalSummaryDividerPre, it)
 			}
@@ -708,19 +725,19 @@ Loop:
 			// let extractShortcode handle left delim (will do so recursively)
 			iter.Backup()
 
-			currShortcode, err := s.extractShortcode(ordinal, 0, iter)
+			currShortcode, err := s.extractShortcode(ordinal, 0, result.Input(), iter)
 			if err != nil {
 				return fail(err, it)
 			}
 
-			currShortcode.pos = it.Pos
-			currShortcode.length = iter.Current().Pos - it.Pos
+			currShortcode.pos = it.Pos()
+			currShortcode.length = iter.Current().Pos() - it.Pos()
 			if currShortcode.placeholder == "" {
 				currShortcode.placeholder = createShortcodePlaceholder("s", currShortcode.ordinal)
 			}
 
 			if currShortcode.name != "" {
-				s.nameSet[currShortcode.name] = true
+				s.addName(currShortcode.name)
 			}
 
 			if currShortcode.params == nil {
@@ -735,7 +752,7 @@ Loop:
 			rn.AddShortcode(currShortcode)
 
 		case it.Type == pageparser.TypeEmoji:
-			if emoji := helpers.Emoji(it.ValStr()); emoji != nil {
+			if emoji := helpers.Emoji(it.ValStr(result.Input())); emoji != nil {
 				rn.AddReplacement(emoji, it)
 			} else {
 				rn.AddBytes(it)
@@ -743,7 +760,7 @@ Loop:
 		case it.IsEOF():
 			break Loop
 		case it.IsError():
-			err := fail(errors.New(it.ValStr()), it)
+			err := fail(it.Err, it)
 			currShortcode.err = err
 			return err
 
@@ -752,15 +769,13 @@ Loop:
 		}
 	}
 
-	if !frontMatterSet {
+	if !frontMatterSet && withFrontMatter != nil {
 		// Page content without front matter. Assign default front matter from
 		// cascades etc.
-		if err := meta.setMetadata(bucket, p, nil); err != nil {
+		if err := withFrontMatter(nil); err != nil {
 			return err
 		}
 	}
-
-	p.cmap = rn
 
 	return nil
 }

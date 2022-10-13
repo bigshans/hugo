@@ -83,7 +83,7 @@ To make the contribution process as seamless as possible, we ask for the followi
 
 ### Git Commit Message Guidelines
 
-This [blog article](http://chris.beams.io/posts/git-commit/) is a good resource for learning how to write good commit messages,
+This [blog article](https://cbea.ms/git-commit/) is a good resource for learning how to write good commit messages,
 the most important part being that each commit message should have a title/subject in imperative mood starting with a capital letter and no trailing period:
 *"js: Return error when option x is not set"*, **NOT** *"returning some error."*
 
@@ -98,12 +98,6 @@ Most title/subjects should have a lower-cased prefix with a colon and one whites
 
 Also, if your commit references one or more GitHub issues, always end your commit message body with *See #1234* or *Fixes #1234*.
 Replace *1234* with the GitHub issue ID. The last example will close the issue when the commit is merged into *master*.
-
-Sometimes it makes sense to prefix the commit message with the package name (or docs folder) all lowercased ending with a colon.
-That is fine, but the rest of the rules above apply.
-So it is "tpl: Add emojify template func", not "tpl: add emojify template func.", and "docs: Document emoji", not "doc: document emoji."
-
-Please use a short and descriptive branch name, e.g. **NOT** "patch-1". It's very common but creates a naming conflict each time when a submission is pulled for a review.
 
 An example:
 

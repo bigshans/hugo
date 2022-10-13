@@ -127,6 +127,12 @@ func initializeConfig(mustHaveConfigFile, failOnInitErr, running bool,
 		return nil, err
 	}
 
+	if h := c.hugoTry(); h != nil {
+		for _, s := range h.Sites {
+			s.RegisterMediaTypes()
+		}
+	}
+
 	return c, nil
 }
 
@@ -200,6 +206,7 @@ func initializeFlags(cmd *cobra.Command, cfg config.Provider) {
 		"forceSyncStatic",
 		"noTimes",
 		"noChmod",
+		"noBuildLock",
 		"ignoreVendorPaths",
 		"templateMetrics",
 		"templateMetricsHints",
@@ -277,10 +284,6 @@ func setValueFromFlag(flags *flag.FlagSet, key string, cfg config.Provider, targ
 	}
 }
 
-func isTerminal() bool {
-	return terminal.IsTerminal(os.Stdout)
-}
-
 func (c *commandeer) fullBuild(noBuildLock bool) error {
 	var (
 		g         errgroup.Group
@@ -290,7 +293,7 @@ func (c *commandeer) fullBuild(noBuildLock bool) error {
 	if !c.h.quiet {
 		fmt.Println("Start building sites … ")
 		fmt.Println(hugo.BuildVersionString())
-		if isTerminal() {
+		if terminal.IsTerminal(os.Stdout) {
 			defer func() {
 				fmt.Print(showCursor + clearLine)
 			}()
@@ -508,12 +511,15 @@ func (c *commandeer) build() error {
 		c.hugo().PrintProcessingStats(os.Stdout)
 		fmt.Println()
 
-		if createCounter, ok := c.publishDirFs.(hugofs.DuplicatesReporter); ok {
-			dupes := createCounter.ReportDuplicates()
-			if dupes != "" {
-				c.logger.Warnln("Duplicate target paths:", dupes)
+		hugofs.WalkFilesystems(c.publishDirFs, func(fs afero.Fs) bool {
+			if dfs, ok := fs.(hugofs.DuplicatesReporter); ok {
+				dupes := dfs.ReportDuplicates()
+				if dupes != "" {
+					c.logger.Warnln("Duplicate target paths:", dupes)
+				}
 			}
-		}
+			return false
+		})
 
 		unusedTemplates := c.hugo().Tmpl().(tpl.UnusedTemplatesProvider).UnusedTemplates()
 		for _, unusedTemplate := range unusedTemplates {
@@ -647,10 +653,7 @@ func (c *commandeer) copyStaticTo(sourceFs *filesystems.SourceFilesystem) (uint6
 	syncer.NoChmod = c.Cfg.GetBool("noChmod")
 	syncer.ChmodFilter = chmodFilter
 	syncer.SrcFs = fs
-	syncer.DestFs = c.Fs.PublishDir
-	if c.renderStaticToDisk {
-		syncer.DestFs = c.Fs.PublishDirStatic
-	}
+	syncer.DestFs = c.Fs.PublishDirStatic
 	// Now that we are using a unionFs for the static directories
 	// We can effectively clean the publishDir on initial sync
 	syncer.Delete = c.Cfg.GetBool("cleanDestinationDir")
@@ -860,8 +863,13 @@ func (c *commandeer) newWatcher(pollIntervalStr string, dirList ...string) (*wat
 		return nil, err
 	}
 
+	spec := c.hugo().Deps.SourceSpec
+
 	for _, d := range dirList {
 		if d != "" {
+			if spec.IgnoreFile(d) {
+				continue
+			}
 			_ = watcher.Add(d)
 		}
 	}

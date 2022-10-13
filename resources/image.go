@@ -19,6 +19,7 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
+	"image/gif"
 	_ "image/gif"
 	_ "image/png"
 	"io"
@@ -28,6 +29,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	color_extractor "github.com/marekm4/color-extractor"
 
 	"github.com/gohugoio/hugo/common/paths"
 
@@ -62,6 +65,9 @@ type imageResource struct {
 	metaInit    sync.Once
 	metaInitErr error
 	meta        *imageMeta
+
+	dominantColorInit sync.Once
+	dominantColors    []string
 
 	baseResource
 }
@@ -134,9 +140,36 @@ func (i *imageResource) getExif() *exif.ExifInfo {
 	return i.meta.Exif
 }
 
-// Cloneis for internal use.
+// Colors returns a slice of the most dominant colors in an image
+// using a simple histogram method.
+func (i *imageResource) Colors() ([]string, error) {
+	var err error
+	i.dominantColorInit.Do(func() {
+		var img image.Image
+		img, err = i.DecodeImage()
+		if err != nil {
+			return
+		}
+		colors := color_extractor.ExtractColors(img)
+		for _, c := range colors {
+			i.dominantColors = append(i.dominantColors, images.ColorToHexString(c))
+		}
+	})
+	return i.dominantColors, nil
+}
+
+// Clone is for internal use.
 func (i *imageResource) Clone() resource.Resource {
 	gr := i.baseResource.Clone().(baseResource)
+	return &imageResource{
+		root:         i.root,
+		Image:        i.WithSpec(gr),
+		baseResource: gr,
+	}
+}
+
+func (i *imageResource) cloneTo(targetPath string) resource.Resource {
+	gr := i.baseResource.cloneTo(targetPath).(baseResource)
 	return &imageResource{
 		root:         i.root,
 		Image:        i.WithSpec(gr),
@@ -337,6 +370,15 @@ func (i *imageResource) decodeImageConfig(action, spec string) (images.ImageConf
 	return conf, nil
 }
 
+type giphy struct {
+	image.Image
+	gif *gif.GIF
+}
+
+func (g *giphy) GIF() *gif.GIF {
+	return g.gif
+}
+
 // DecodeImage decodes the image source into an Image.
 // This an internal method and may change.
 func (i *imageResource) DecodeImage() (image.Image, error) {
@@ -345,6 +387,14 @@ func (i *imageResource) DecodeImage() (image.Image, error) {
 		return nil, fmt.Errorf("failed to open image for decode: %w", err)
 	}
 	defer f.Close()
+
+	if i.Format == images.GIF {
+		g, err := gif.DecodeAll(f)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode gif: %w", err)
+		}
+		return &giphy{gif: g, Image: g.Image[0]}, nil
+	}
 	img, _, err := image.Decode(f)
 	return img, err
 }

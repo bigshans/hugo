@@ -62,12 +62,39 @@ type ShortcodeWithPage struct {
 	// this ordinal will represent the position of this shortcode in the page content.
 	Ordinal int
 
+	// Indentation before the opening shortcode in the source.
+	indentation string
+
+	innerDeindentInit sync.Once
+	innerDeindent     template.HTML
+
 	// pos is the position in bytes in the source file. Used for error logging.
 	posInit   sync.Once
 	posOffset int
 	pos       text.Position
 
 	scratch *maps.Scratch
+}
+
+// InnerDeindent returns the (potentially de-indented) inner content of the shortcode.
+func (scp *ShortcodeWithPage) InnerDeindent() template.HTML {
+	if scp.indentation == "" {
+		return scp.Inner
+	}
+	scp.innerDeindentInit.Do(func() {
+		b := bp.GetBuffer()
+		text.VisitLinesAfter(string(scp.Inner), func(s string) {
+			if strings.HasPrefix(s, scp.indentation) {
+				b.WriteString(strings.TrimPrefix(s, scp.indentation))
+			} else {
+				b.WriteString(s)
+			}
+		})
+		scp.innerDeindent = template.HTML(b.String())
+		bp.PutBuffer(b)
+	})
+
+	return scp.innerDeindent
 }
 
 // Position returns this shortcode's detailed position. Note that this information
@@ -170,11 +197,13 @@ type shortcode struct {
 	ordinal   int
 	err       error
 
+	indentation string // indentation from source.
+
 	info   tpl.Info       // One of the output formats (arbitrary)
 	templs []tpl.Template // All output formats
 
 	// If set, the rendered shortcode is sent as part of the surrounding content
-	// to Blackfriday and similar.
+	// to Goldmark and similar.
 	// Before Hug0 0.55 we didn't send any shortcode output to the markup
 	// renderer, and this flag told Hugo to process the {{ .Inner }} content
 	// separately.
@@ -182,7 +211,7 @@ type shortcode struct {
 	//    {{ $_hugo_config := `{ "version": 1 }`}}
 	doMarkup bool
 
-	// the placeholder in the source when passed to Blackfriday etc.
+	// the placeholder in the source when passed to Goldmark etc.
 	// This also identifies the rendered shortcode.
 	placeholder string
 
@@ -248,13 +277,14 @@ type shortcodeHandler struct {
 	shortcodes []*shortcode
 
 	// All the shortcode names in this set.
-	nameSet map[string]bool
+	nameSet   map[string]bool
+	nameSetMu sync.RWMutex
 
 	// Configuration
 	enableInlineShortcodes bool
 }
 
-func newShortcodeHandler(p *pageState, s *Site, placeholderFunc func() string) *shortcodeHandler {
+func newShortcodeHandler(p *pageState, s *Site) *shortcodeHandler {
 	sh := &shortcodeHandler{
 		p:                      p,
 		s:                      s,
@@ -323,7 +353,7 @@ func renderShortcode(
 		hasVariants = hasVariants || more
 	}
 
-	data := &ShortcodeWithPage{Ordinal: sc.ordinal, posOffset: sc.pos, Params: sc.params, Page: newPageForShortcode(p), Parent: parent, Name: sc.name}
+	data := &ShortcodeWithPage{Ordinal: sc.ordinal, posOffset: sc.pos, indentation: sc.indentation, Params: sc.params, Page: newPageForShortcode(p), Parent: parent, Name: sc.name}
 	if sc.params != nil {
 		data.IsNamedParams = reflect.TypeOf(sc.params).Kind() == reflect.Map
 	}
@@ -398,11 +428,49 @@ func renderShortcode(
 		return "", false, fe
 	}
 
+	if len(sc.inner) == 0 && len(sc.indentation) > 0 {
+		b := bp.GetBuffer()
+		i := 0
+		text.VisitLinesAfter(result, func(line string) {
+			// The first line is correctly indented.
+			if i > 0 {
+				b.WriteString(sc.indentation)
+			}
+			i++
+			b.WriteString(line)
+		})
+
+		result = b.String()
+		bp.PutBuffer(b)
+	}
+
 	return result, hasVariants, err
 }
 
 func (s *shortcodeHandler) hasShortcodes() bool {
 	return s != nil && len(s.shortcodes) > 0
+}
+
+func (s *shortcodeHandler) addName(name string) {
+	s.nameSetMu.Lock()
+	defer s.nameSetMu.Unlock()
+	s.nameSet[name] = true
+}
+
+func (s *shortcodeHandler) transferNames(in *shortcodeHandler) {
+	s.nameSetMu.Lock()
+	defer s.nameSetMu.Unlock()
+	for k := range in.nameSet {
+		s.nameSet[k] = true
+	}
+
+}
+
+func (s *shortcodeHandler) hasName(name string) bool {
+	s.nameSetMu.RLock()
+	defer s.nameSetMu.RUnlock()
+	_, ok := s.nameSet[name]
+	return ok
 }
 
 func (s *shortcodeHandler) renderShortcodesForPage(p *pageState, f output.Format) (map[string]string, bool, error) {
@@ -429,8 +497,6 @@ func (s *shortcodeHandler) renderShortcodesForPage(p *pageState, f output.Format
 	return rendered, hasVariants, nil
 }
 
-var errShortCodeIllegalState = errors.New("Illegal shortcode state")
-
 func (s *shortcodeHandler) parseError(err error, input []byte, pos int) error {
 	if s.p != nil {
 		return s.p.parseError(err, input, pos)
@@ -441,11 +507,20 @@ func (s *shortcodeHandler) parseError(err error, input []byte, pos int) error {
 // pageTokens state:
 // - before: positioned just before the shortcode start
 // - after: shortcode(s) consumed (plural when they are nested)
-func (s *shortcodeHandler) extractShortcode(ordinal, level int, pt *pageparser.Iterator) (*shortcode, error) {
+func (s *shortcodeHandler) extractShortcode(ordinal, level int, source []byte, pt *pageparser.Iterator) (*shortcode, error) {
 	if s == nil {
 		panic("handler nil")
 	}
 	sc := &shortcode{ordinal: ordinal}
+
+	// Back up one to identify any indentation.
+	if pt.Pos() > 0 {
+		pt.Backup()
+		item := pt.Next()
+		if item.IsIndentation() {
+			sc.indentation = item.ValStr(source)
+		}
+	}
 
 	cnt := 0
 	nestedOrdinal := 0
@@ -453,7 +528,7 @@ func (s *shortcodeHandler) extractShortcode(ordinal, level int, pt *pageparser.I
 	const errorPrefix = "failed to extract shortcode"
 
 	fail := func(err error, i pageparser.Item) error {
-		return s.parseError(fmt.Errorf("%s: %w", errorPrefix, err), pt.Input(), i.Pos)
+		return s.parseError(fmt.Errorf("%s: %w", errorPrefix, err), source, i.Pos())
 	}
 
 Loop:
@@ -473,10 +548,10 @@ Loop:
 			if cnt > 0 {
 				// nested shortcode; append it to inner content
 				pt.Backup()
-				nested, err := s.extractShortcode(nestedOrdinal, nextLevel, pt)
+				nested, err := s.extractShortcode(nestedOrdinal, nextLevel, source, pt)
 				nestedOrdinal++
 				if nested != nil && nested.name != "" {
-					s.nameSet[nested.name] = true
+					s.addName(nested.name)
 				}
 
 				if err == nil {
@@ -512,7 +587,7 @@ Loop:
 						// return that error, more specific
 						continue
 					}
-					return sc, fail(fmt.Errorf("shortcode %q has no .Inner, yet a closing tag was provided", next.Val), next)
+					return sc, fail(fmt.Errorf("shortcode %q has no .Inner, yet a closing tag was provided", next.ValStr(source)), next)
 				}
 			}
 			if next.IsRightShortcodeDelim() {
@@ -525,11 +600,11 @@ Loop:
 
 			return sc, nil
 		case currItem.IsText():
-			sc.inner = append(sc.inner, currItem.ValStr())
+			sc.inner = append(sc.inner, currItem.ValStr(source))
 		case currItem.Type == pageparser.TypeEmoji:
 			// TODO(bep) avoid the duplication of these "text cases", to prevent
 			// more of #6504 in the future.
-			val := currItem.ValStr()
+			val := currItem.ValStr(source)
 			if emoji := helpers.Emoji(val); emoji != nil {
 				sc.inner = append(sc.inner, string(emoji))
 			} else {
@@ -537,7 +612,7 @@ Loop:
 			}
 		case currItem.IsShortcodeName():
 
-			sc.name = currItem.ValStr()
+			sc.name = currItem.ValStr(source)
 
 			// Used to check if the template expects inner content.
 			templs := s.s.Tmpl().LookupVariants(sc.name)
@@ -548,7 +623,7 @@ Loop:
 			sc.info = templs[0].(tpl.Info)
 			sc.templs = templs
 		case currItem.IsInlineShortcodeName():
-			sc.name = currItem.ValStr()
+			sc.name = currItem.ValStr(source)
 			sc.isInline = true
 		case currItem.IsShortcodeParam():
 			if !pt.IsValueNext() {
@@ -557,27 +632,27 @@ Loop:
 				// named params
 				if sc.params == nil {
 					params := make(map[string]any)
-					params[currItem.ValStr()] = pt.Next().ValTyped()
+					params[currItem.ValStr(source)] = pt.Next().ValTyped(source)
 					sc.params = params
 				} else {
 					if params, ok := sc.params.(map[string]any); ok {
-						params[currItem.ValStr()] = pt.Next().ValTyped()
+						params[currItem.ValStr(source)] = pt.Next().ValTyped(source)
 					} else {
-						return sc, errShortCodeIllegalState
+						return sc, fmt.Errorf("%s: invalid state: invalid param type %T for shortcode %q, expected a map", errorPrefix, params, sc.name)
 					}
 				}
 			} else {
 				// positional params
 				if sc.params == nil {
 					var params []any
-					params = append(params, currItem.ValTyped())
+					params = append(params, currItem.ValTyped(source))
 					sc.params = params
 				} else {
 					if params, ok := sc.params.([]any); ok {
-						params = append(params, currItem.ValTyped())
+						params = append(params, currItem.ValTyped(source))
 						sc.params = params
 					} else {
-						return sc, errShortCodeIllegalState
+						return sc, fmt.Errorf("%s: invalid state: invalid param type %T for shortcode %q, expected a slice", errorPrefix, params, sc.name)
 					}
 				}
 			}
