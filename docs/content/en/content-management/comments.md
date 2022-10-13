@@ -4,7 +4,6 @@ linktitle: Comments
 description: Hugo ships with an internal Disqus template, but this isn't the only commenting system that will work with your new Hugo website.
 date: 2017-02-01
 publishdate: 2017-02-01
-lastmod: 2017-03-09
 keywords: [sections,content,organization]
 categories: [project organization, fundamentals]
 menu:
@@ -30,7 +29,7 @@ Hugo comes with all the code you need to load Disqus into your templates. Before
 Disqus comments require you set a single value in your [site's configuration file][configuration] like so:
 
 {{< code-toggle copy="false" >}}
-disqusShortname = "yourdiscussshortname"
+disqusShortname = "yourDisqusShortname"
 {{</ code-toggle >}}
 
 For many websites, this is enough configuration. However, you also have the option to set the following in the [front matter][] of a single content file:
@@ -60,11 +59,11 @@ These are some alternatives to Disqus:
 * [Muut](https://muut.com/)
 * [Remark42](https://remark42.com/) (Open source, Golang, Easy to run docker)
 * [Staticman](https://staticman.net/)
-* [Talkyard](https://www.talkyard.io/blog-comments) (Open source, & serverless hosting)
+* [Talkyard](https://blog-comments.talkyard.io/) (Open source, & serverless hosting)
 * [Utterances](https://utteranc.es/) (Open source, GitHub comments widget built on GitHub issues)
 
 [configuration]: /getting-started/configuration/
-[disquspartial]: /templates/partials/#disqus
+[disquspartial]: /templates/internal/#disqus
 [disqussetup]: https://disqus.com/profile/signup/
 [forum]: https://discourse.gohugo.io
 [front matter]: /content-management/front-matter/

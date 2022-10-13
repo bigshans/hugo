@@ -40,7 +40,7 @@ func TestNewContentFromFile(t *testing.T) {
 		name     string
 		kind     string
 		path     string
-		expected interface{}
+		expected any
 	}{
 		{"Post", "post", "post/sample-1.md", []string{`title = "Post Arch title"`, `test = "test1"`, "date = \"2015-01-12T19:20:04-07:00\""}},
 		{"Post org-mode", "post", "post/org-1.org", []string{`#+title: ORG-1`}},
@@ -82,8 +82,7 @@ func TestNewContentFromFile(t *testing.T) {
 			cfg, fs := newTestCfg(c, mm)
 			h, err := hugolib.NewHugoSites(deps.DepsCfg{Cfg: cfg, Fs: fs})
 			c.Assert(err, qt.IsNil)
-
-			err = create.NewContent(h, cas.kind, cas.path)
+			err = create.NewContent(h, cas.kind, cas.path, false)
 
 			if b, ok := cas.expected.(bool); ok && !b {
 				if !b {
@@ -98,6 +97,7 @@ func TestNewContentFromFile(t *testing.T) {
 			if !strings.HasPrefix(fname, "content") {
 				fname = filepath.Join("content", fname)
 			}
+
 			content := readFileFromFs(c, fs.Source, fname)
 
 			for _, v := range cas.expected.([]string) {
@@ -145,7 +145,7 @@ i18n: {{ T "hugo" }}
 	c.Assert(err, qt.IsNil)
 	c.Assert(len(h.Sites), qt.Equals, 2)
 
-	c.Assert(create.NewContent(h, "my-bundle", "post/my-post"), qt.IsNil)
+	c.Assert(create.NewContent(h, "my-bundle", "post/my-post", false), qt.IsNil)
 
 	cContains(c, readFileFromFs(t, fs.Source, filepath.Join("content", "post/my-post/resources/hugo1.json")), `hugo1: {{ printf "no template handling in here" }}`)
 	cContains(c, readFileFromFs(t, fs.Source, filepath.Join("content", "post/my-post/resources/hugo2.xml")), `hugo2: {{ printf "no template handling in here" }}`)
@@ -157,7 +157,7 @@ i18n: {{ T "hugo" }}
 
 	cContains(c, readFileFromFs(t, fs.Source, filepath.Join("content", "post/my-post/pages/bio.md")), `File: bio.md`, `Site Lang: en`, `Name: Bio`)
 
-	c.Assert(create.NewContent(h, "my-theme-bundle", "post/my-theme-post"), qt.IsNil)
+	c.Assert(create.NewContent(h, "my-theme-bundle", "post/my-theme-post", false), qt.IsNil)
 	cContains(c, readFileFromFs(t, fs.Source, filepath.Join("content", "post/my-theme-post/index.md")), `File: index.md`, `Site Lang: en`, `Name: My Theme Post`, `i18n: Hugo Rocks!`)
 	cContains(c, readFileFromFs(t, fs.Source, filepath.Join("content", "post/my-theme-post/resources/hugo1.json")), `hugo1: {{ printf "no template handling in here" }}`)
 }
@@ -187,19 +187,19 @@ site RegularPages: {{ len site.RegularPages  }}
 	c.Assert(err, qt.IsNil)
 	c.Assert(len(h.Sites), qt.Equals, 2)
 
-	c.Assert(create.NewContent(h, "my-bundle", "post/my-post"), qt.IsNil)
+	c.Assert(create.NewContent(h, "my-bundle", "post/my-post", false), qt.IsNil)
 	cContains(c, readFileFromFs(t, fs.Source, filepath.Join("content", "post/my-post/index.md")), `site RegularPages: 10`)
 
 	// Default bundle archetype
-	c.Assert(create.NewContent(h, "", "post/my-post2"), qt.IsNil)
+	c.Assert(create.NewContent(h, "", "post/my-post2", false), qt.IsNil)
 	cContains(c, readFileFromFs(t, fs.Source, filepath.Join("content", "post/my-post2/index.md")), `default archetype index.md`)
 
 	// Regular file with bundle kind.
-	c.Assert(create.NewContent(h, "my-bundle", "post/foo.md"), qt.IsNil)
+	c.Assert(create.NewContent(h, "my-bundle", "post/foo.md", false), qt.IsNil)
 	cContains(c, readFileFromFs(t, fs.Source, filepath.Join("content", "post/foo.md")), `draft: true`)
 
 	// Regular files should fall back to the default archetype (we have no regular file archetype).
-	c.Assert(create.NewContent(h, "my-bundle", "mypage.md"), qt.IsNil)
+	c.Assert(create.NewContent(h, "my-bundle", "mypage.md", false), qt.IsNil)
 	cContains(c, readFileFromFs(t, fs.Source, filepath.Join("content", "mypage.md")), `draft: true`)
 
 }
@@ -237,7 +237,7 @@ i18n: {{ T "hugo" }}
 	c.Assert(err, qt.IsNil)
 	c.Assert(len(h.Sites), qt.Equals, 2)
 
-	c.Assert(create.NewContent(h, "my-bundle", "post/my-post"), qt.IsNil)
+	c.Assert(create.NewContent(h, "my-bundle", "post/my-post", false), qt.IsNil)
 
 	cContains(c, readFileFromFs(t, fs.Source, filepath.Join("content", "post/my-post/resources/hugo1.json")), `hugo1: {{ printf "no template handling in here" }}`)
 	cContains(c, readFileFromFs(t, fs.Source, filepath.Join("content", "post/my-post/resources/hugo2.xml")), `hugo2: {{ printf "no template handling in here" }}`)
@@ -247,9 +247,36 @@ i18n: {{ T "hugo" }}
 
 	cContains(c, readFileFromFs(t, fs.Source, filepath.Join("content", "post/my-post/pages/bio.md")), `File: bio.md`, `Name: Bio`)
 
-	c.Assert(create.NewContent(h, "my-theme-bundle", "post/my-theme-post"), qt.IsNil)
+	c.Assert(create.NewContent(h, "my-theme-bundle", "post/my-theme-post", false), qt.IsNil)
 	cContains(c, readFileFromFs(t, fs.Source, filepath.Join("content", "post/my-theme-post/index.md")), `File: index.md`, `Name: My Theme Post`, `i18n: Hugo Rocks!`)
 	cContains(c, readFileFromFs(t, fs.Source, filepath.Join("content", "post/my-theme-post/resources/hugo1.json")), `hugo1: {{ printf "no template handling in here" }}`)
+}
+
+func TestNewContentForce(t *testing.T) {
+	mm := afero.NewMemMapFs()
+	c := qt.New(t)
+
+	archetypeDir := filepath.Join("archetypes", "my-bundle")
+	c.Assert(mm.MkdirAll(archetypeDir, 0o755), qt.IsNil)
+	c.Assert(afero.WriteFile(mm, filepath.Join(archetypeDir, "index.md"), []byte(""), 0o755), qt.IsNil)
+	c.Assert(afero.WriteFile(mm, filepath.Join(archetypeDir, "index.nn.md"), []byte(""), 0o755), qt.IsNil)
+
+	c.Assert(initFs(mm), qt.IsNil)
+	cfg, fs := newTestCfg(c, mm)
+
+	h, err := hugolib.NewHugoSites(deps.DepsCfg{Cfg: cfg, Fs: fs})
+	c.Assert(err, qt.IsNil)
+	c.Assert(len(h.Sites), qt.Equals, 2)
+
+	// from file
+	c.Assert(create.NewContent(h, "post", "post/my-post.md", false), qt.IsNil)
+	c.Assert(create.NewContent(h, "post", "post/my-post.md", false), qt.IsNotNil)
+	c.Assert(create.NewContent(h, "post", "post/my-post.md", true), qt.IsNil)
+
+	// from dir
+	c.Assert(create.NewContent(h, "my-bundle", "post/my-post", false), qt.IsNil)
+	c.Assert(create.NewContent(h, "my-bundle", "post/my-post", false), qt.IsNotNil)
+	c.Assert(create.NewContent(h, "my-bundle", "post/my-post", true), qt.IsNil)
 }
 
 func initFs(fs afero.Fs) error {
@@ -368,7 +395,7 @@ Some text.
 	return nil
 }
 
-func cContains(c *qt.C, v interface{}, matches ...string) {
+func cContains(c *qt.C, v any, matches ...string) {
 	for _, m := range matches {
 		c.Assert(v, qt.Contains, m)
 	}

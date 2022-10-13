@@ -25,7 +25,7 @@ func TestHexStringToColor(t *testing.T) {
 
 	for _, test := range []struct {
 		arg    string
-		expect interface{}
+		expect any
 	}{
 		{"f", false},
 		{"#f", false},
@@ -55,6 +55,30 @@ func TestHexStringToColor(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(result, qt.DeepEquals, test.expect)
+		})
+
+	}
+}
+
+func TestColorToHexString(t *testing.T) {
+	c := qt.New(t)
+
+	for _, test := range []struct {
+		arg    color.Color
+		expect string
+	}{
+		{color.White, "#ffffff"},
+		{color.Black, "#000000"},
+		{color.RGBA{R: 0x42, G: 0x87, B: 0xf5, A: 0xff}, "#4287f5"},
+	} {
+
+		test := test
+		c.Run(test.expect, func(c *qt.C) {
+			c.Parallel()
+
+			result := ColorToHexString(test.arg)
+
+			c.Assert(result, qt.Equals, test.expect)
 		})
 
 	}

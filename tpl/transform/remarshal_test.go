@@ -11,13 +11,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package transform
+package transform_test
 
 import (
 	"testing"
 
-	"github.com/gohugoio/hugo/config"
 	"github.com/gohugoio/hugo/htesting"
+	"github.com/gohugoio/hugo/hugolib"
+	"github.com/gohugoio/hugo/tpl/transform"
 
 	qt "github.com/frankban/quicktest"
 )
@@ -25,13 +26,14 @@ import (
 func TestRemarshal(t *testing.T) {
 	t.Parallel()
 
-	v := config.New()
-	v.Set("contentDir", "content")
-	ns := New(newDeps(v))
+	b := hugolib.NewIntegrationTestBuilder(
+		hugolib.IntegrationTestConfig{T: t},
+	).Build()
+
+	ns := transform.New(b.H.Deps)
 	c := qt.New(t)
 
 	c.Run("Roundtrip variants", func(c *qt.C) {
-
 		tomlExample := `title = 'Test Metadata'
 		
 [[resources]]
@@ -129,7 +131,6 @@ title: Test Metadata
 
 			}
 		}
-
 	})
 
 	c.Run("Comments", func(c *qt.C) {
@@ -179,11 +180,11 @@ a = "b"
 
 		converted, err := ns.Remarshal("toml", input)
 		c.Assert(err, qt.IsNil)
-		c.Assert(converted, qt.Equals, "[params]\n  [params.variables]\n    a = 'b'\n\n\n")
+		c.Assert(converted, qt.Equals, "[params]\n  [params.variables]\n    a = 'b'\n")
 	})
 
 	c.Run("Map input", func(c *qt.C) {
-		input := map[string]interface{}{
+		input := map[string]any{
 			"hello": "world",
 		}
 
