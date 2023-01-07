@@ -364,8 +364,7 @@ func (ns *Namespace) ToCSS(args ...any) (resource.Resource, error) {
 	}
 
 	if m != nil {
-		maps.PrepareParams(m)
-		if t, found := m["transpiler"]; found {
+		if t, found := maps.LookupEqualFold(m, "transpiler"); found {
 			switch t {
 			case transpilerDart, transpilerLibSass:
 				transpiler = cast.ToString(t)
@@ -415,6 +414,7 @@ func (ns *Namespace) PostCSS(args ...any) (resource.Resource, error) {
 	return ns.postcssClient.Process(r, m)
 }
 
+// PostProcess processes r after the build.
 func (ns *Namespace) PostProcess(r resource.Resource) (postpub.PostPublishedResource, error) {
 	return ns.deps.ResourceSpec.PostProcess(r)
 }

@@ -220,10 +220,6 @@ slug: "a-propos"
 
 At render, Hugo will build both `/about/` and `/fr/a-propos/` while maintaining their translation linking.
 
-{{% note %}}
-If using `url`, remember to include the language part as well: `/fr/compagnie/a-propos/`.
-{{%/ note %}}
-
 ### Page Bundles
 
 To avoid the burden of having to duplicate files, each Page Bundle inherits the resources of its linked translated pages' bundles except for the content files (Markdown files, HTML files etc...).
@@ -368,7 +364,7 @@ In case you need to pass a custom data: (`(dict "Count" numeric_value_only)` is 
 The following localization examples assume your site's primary language is English, with translations to French and German.
 
 {{< code-toggle file="config" >}}
-defaultContentLang = 'en'
+defaultContentLanguage = 'en'
 
 [languages]
 [languages.en]
@@ -568,7 +564,19 @@ If there is more than one language defined, the `LanguagePrefix` variable will e
 
 ## Generate multilingual content with `hugo new`
 
-Currently, `hugo new` is not ready to support generating multilingual content. But there is a [proposal topic](https://github.com/gohugoio/hugo/issues/7732) about this in GitHub issue to discuss how it should work.
+If you organize content with translations in the same directory:
+
+```text
+hugo new post/test.en.md
+hugo new post/test.de.md
+```
+
+If you organize content with translations in different directories:
+
+```text
+hugo new content/en/post/test.md
+hugo new content/de/post/test.md
+```
 
 [abslangurl]: /functions/abslangurl
 [config]: /getting-started/configuration/

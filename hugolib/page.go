@@ -16,7 +16,6 @@ package hugolib
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 	"sort"
@@ -31,8 +30,6 @@ import (
 	"github.com/gohugoio/hugo/tpl"
 
 	"github.com/gohugoio/hugo/hugofs/files"
-
-	"github.com/bep/gitmap"
 
 	"github.com/gohugoio/hugo/helpers"
 
@@ -151,7 +148,7 @@ func (p *pageState) GetIdentity() identity.Identity {
 	return identity.NewPathIdentity(files.ComponentFolderContent, filepath.FromSlash(p.Pathc()))
 }
 
-func (p *pageState) GitInfo() *gitmap.GitInfo {
+func (p *pageState) GitInfo() source.GitInfo {
 	return p.gitInfo
 }
 
@@ -489,7 +486,7 @@ func (p *pageState) renderResources() (err error) {
 			}
 
 			if err := src.Publish(); err != nil {
-				if os.IsNotExist(err) {
+				if herrors.IsNotExist(err) {
 					// The resource has been deleted from the file system.
 					// This should be extremely rare, but can happen on live reload in server
 					// mode when the same resource is member of different page bundles.
