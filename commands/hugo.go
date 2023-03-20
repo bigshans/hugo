@@ -18,7 +18,7 @@ package commands
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -138,10 +138,10 @@ func initializeConfig(mustHaveConfigFile, failOnInitErr, running bool,
 
 func (c *commandeer) createLogger(cfg config.Provider) (loggers.Logger, error) {
 	var (
-		logHandle       = ioutil.Discard
+		logHandle       = io.Discard
 		logThreshold    = jww.LevelWarn
 		logFile         = cfg.GetString("logFile")
-		outHandle       = ioutil.Discard
+		outHandle       = io.Discard
 		stdoutThreshold = jww.LevelWarn
 	)
 
@@ -157,7 +157,7 @@ func (c *commandeer) createLogger(cfg config.Provider) (loggers.Logger, error) {
 				return nil, newSystemError("Failed to open log file:", logFile, err)
 			}
 		} else {
-			logHandle, err = ioutil.TempFile("", "hugo")
+			logHandle, err = os.CreateTemp("", "hugo")
 			if err != nil {
 				return nil, newSystemError(err)
 			}
@@ -238,6 +238,7 @@ func initializeFlags(cmd *cobra.Command, cfg config.Provider) {
 		"themesDir",
 		"verbose",
 		"verboseLog",
+		"workers",
 		"duplicateTargetPaths",
 	}
 
@@ -254,6 +255,7 @@ func initializeFlags(cmd *cobra.Command, cfg config.Provider) {
 	setValueFromFlag(cmd.Flags(), "destination", cfg, "publishDir", false)
 	setValueFromFlag(cmd.Flags(), "printI18nWarnings", cfg, "logI18nWarnings", false)
 	setValueFromFlag(cmd.Flags(), "printPathWarnings", cfg, "logPathWarnings", false)
+
 }
 
 func setValueFromFlag(flags *flag.FlagSet, key string, cfg config.Provider, targetKey string, force bool) {

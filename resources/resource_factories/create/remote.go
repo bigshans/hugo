@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"mime"
 	"net/http"
 	"net/http/httputil"
@@ -30,7 +29,7 @@ import (
 	"github.com/gohugoio/hugo/common/hugio"
 	"github.com/gohugoio/hugo/common/maps"
 	"github.com/gohugoio/hugo/common/types"
-	"github.com/gohugoio/hugo/helpers"
+	"github.com/gohugoio/hugo/identity"
 	"github.com/gohugoio/hugo/media"
 	"github.com/gohugoio/hugo/resources"
 	"github.com/gohugoio/hugo/resources/resource"
@@ -48,7 +47,7 @@ type HTTPError struct {
 func responseToData(res *http.Response, readBody bool) map[string]any {
 	var body []byte
 	if readBody {
-		body, _ = ioutil.ReadAll(res.Body)
+		body, _ = io.ReadAll(res.Body)
 	}
 
 	m := map[string]any{
@@ -157,7 +156,7 @@ func (c *Client) FromRemote(uri string, optionsm map[string]any) (resource.Resou
 	// A response to a HEAD method should not have a body. If it has one anyway, that body must be ignored.
 	// See https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/HEAD
 	if !isHeadMethod && res.Body != nil {
-		body, err = ioutil.ReadAll(res.Body)
+		body, err = io.ReadAll(res.Body)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read remote resource %q: %w", uri, err)
 		}
@@ -235,9 +234,9 @@ func (c *Client) validateFromRemoteArgs(uri string, options fromRemoteOptions) e
 
 func calculateResourceID(uri string, optionsm map[string]any) string {
 	if key, found := maps.LookupEqualFold(optionsm, "key"); found {
-		return helpers.HashString(key)
+		return identity.HashString(key)
 	}
-	return helpers.HashString(uri, optionsm)
+	return identity.HashString(uri, optionsm)
 }
 
 func addDefaultHeaders(req *http.Request) {
