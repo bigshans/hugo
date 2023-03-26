@@ -17,7 +17,7 @@ package pandoc_config
 var (
 	// Default holds Hugo's default pandoc configuration.
 	Default = Config{
-		PreserveTOC: false,
+		PreserveTOC: true,
 	}
 )
 
