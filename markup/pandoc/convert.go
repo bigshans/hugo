@@ -52,8 +52,8 @@ type pandocResult struct {
 	toc tableofcontents.Fragments
 }
 
-func (r pandocResult) TableOfContents() tableofcontents.Fragments {
-	return r.toc
+func (r pandocResult) TableOfContents() *tableofcontents.Fragments {
+	return &r.toc
 }
 
 func (c *pandocConverter) Convert(ctx converter.RenderContext) (converter.ResultRender, error) {
