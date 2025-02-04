@@ -21,11 +21,9 @@ import (
 	"github.com/gohugoio/hugo/identity"
 	"github.com/gohugoio/hugo/markup/internal"
 	"github.com/gohugoio/hugo/markup/tableofcontents"
+	"github.com/gohugoio/hugo/markup/converter"
 	"golang.org/x/net/html"
 	"regexp"
-
-	"github.com/gohugoio/hugo/markup/converter"
-	"github.com/gohugoio/hugo/markup/internal"
 )
 
 // Provider is the package entry point.
@@ -138,7 +136,7 @@ func (a *pandocConverter) extractTOC(src []byte) ([]byte, tableofcontents.Fragme
 	f = func(n *html.Node) bool {
 		if n.Type == html.ElementNode && n.Data == "nav" && attr(n, "id") == "TOC" {
 			toc = parseTOC(n)
-			if !a.cfg.MarkupConfig.Pandoc.PreserveTOC {
+			if !a.cfg.MarkupConfig().Pandoc.PreserveTOC {
 				n.Parent.RemoveChild(n)
 			}
 			return true
