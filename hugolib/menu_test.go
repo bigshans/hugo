@@ -105,94 +105,6 @@ Menu Main:  {{ partial "menu.html" (dict "page" . "menu" "main") }}`,
 			"/sect3/|Sect3s|Sect3s|0|-|-|")
 }
 
-// related issue #7594
-func TestMenusSort(t *testing.T) {
-	b := newTestSitesBuilder(t).WithSimpleConfigFile()
-
-	b.WithTemplatesAdded("index.html", `
-{{ range $k, $v := .Site.Menus.main }}
-Default1|{{ $k }}|{{ $v.Weight }}|{{ $v.Name }}|{{ .URL }}|{{ $v.Page }}{{ end }}
-{{ range $k, $v := .Site.Menus.main.ByWeight }}
-ByWeight|{{ $k }}|{{ $v.Weight }}|{{ $v.Name }}|{{ .URL }}|{{ $v.Page }}{{ end }}
-{{ range $k, $v := (.Site.Menus.main.ByWeight).Reverse }}
-Reverse|{{ $k }}|{{ $v.Weight }}|{{ $v.Name }}|{{ .URL }}|{{ $v.Page }}{{ end }}
-{{ range $k, $v := .Site.Menus.main }}
-Default2|{{ $k }}|{{ $v.Weight }}|{{ $v.Name }}|{{ .URL }}|{{ $v.Page }}{{ end }}
-{{ range $k, $v := .Site.Menus.main.ByWeight }}
-ByWeight|{{ $k }}|{{ $v.Weight }}|{{ $v.Name }}|{{ .URL }}|{{ $v.Page }}{{ end }}
-{{ range $k, $v := .Site.Menus.main }}
-Default3|{{ $k }}|{{ $v.Weight }}|{{ $v.Name }}|{{ .URL }}|{{ $v.Page }}{{ end }}
-`)
-
-	b.WithContent("_index.md", `
----
-title: Home
-menu:
-  main:
-    weight: 100
----`)
-
-	b.WithContent("blog/A.md", `
----
-title: "A"
-menu:
-  main:
-    weight: 10
----
-`)
-
-	b.WithContent("blog/B.md", `
----
-title: "B"
-menu:
-  main:
-    weight: 20
----
-`)
-	b.WithContent("blog/C.md", `
----
-title: "C"
-menu:
-  main:
-    weight: 30
----
-`)
-
-	b.Build(BuildCfg{})
-
-	b.AssertFileContent("public/index.html",
-		`Default1|0|10|A|/blog/a/|Page(/blog/A.md)
-        Default1|1|20|B|/blog/b/|Page(/blog/B.md)
-        Default1|2|30|C|/blog/c/|Page(/blog/C.md)
-        Default1|3|100|Home|/|Page(/_index.md)
-
-        ByWeight|0|10|A|/blog/a/|Page(/blog/A.md)
-        ByWeight|1|20|B|/blog/b/|Page(/blog/B.md)
-        ByWeight|2|30|C|/blog/c/|Page(/blog/C.md)
-        ByWeight|3|100|Home|/|Page(/_index.md)
-
-        Reverse|0|100|Home|/|Page(/_index.md)
-        Reverse|1|30|C|/blog/c/|Page(/blog/C.md)
-        Reverse|2|20|B|/blog/b/|Page(/blog/B.md)
-        Reverse|3|10|A|/blog/a/|Page(/blog/A.md)
-
-        Default2|0|10|A|/blog/a/|Page(/blog/A.md)
-        Default2|1|20|B|/blog/b/|Page(/blog/B.md)
-        Default2|2|30|C|/blog/c/|Page(/blog/C.md)
-        Default2|3|100|Home|/|Page(/_index.md)
-
-        ByWeight|0|10|A|/blog/a/|Page(/blog/A.md)
-        ByWeight|1|20|B|/blog/b/|Page(/blog/B.md)
-        ByWeight|2|30|C|/blog/c/|Page(/blog/C.md)
-        ByWeight|3|100|Home|/|Page(/_index.md)
-
-        Default3|0|10|A|/blog/a/|Page(/blog/A.md)
-        Default3|1|20|B|/blog/b/|Page(/blog/B.md)
-        Default3|2|30|C|/blog/c/|Page(/blog/C.md)
-        Default3|3|100|Home|/|Page(/_index.md)`,
-	)
-}
-
 func TestMenusFrontMatter(t *testing.T) {
 	b := newTestSitesBuilder(t).WithSimpleConfigFile()
 
@@ -340,9 +252,9 @@ menu:
 
 `)
 
-	b.WithTemplatesAdded("index.html", `{{ range .Site.Menus.main }}{{ .Title }}|Children: 
+	b.WithTemplatesAdded("index.html", `{{ range .Site.Menus.main }}{{ .Title }}|Children:
 {{- $children := sort .Children ".Page.Date" "desc" }}{{ range $children }}{{ .Title }}|{{ end }}{{ end }}
-	
+
 `)
 
 	b.Build(BuildCfg{})
@@ -360,11 +272,11 @@ func TestMenuParamsEmptyYaml(t *testing.T) {
 
 	b.WithContent("p1.md", `---
 menus:
-  main: 
+  main:
     identity: journal
     weight: 2
     params:
----	
+---
 `)
 	b.Build(BuildCfg{})
 }
@@ -377,9 +289,9 @@ title = "Contact Us"
 url = "mailto:noreply@example.com"
 weight = 300
 [menus.main.params]
-foo = "foo_config"	
-key2 = "key2_config"	
-camelCase = "camelCase_config"	
+foo = "foo_config"
+key2 = "key2_config"
+camelCase = "camelCase_config"
 `)
 
 	b.WithTemplatesAdded("index.html", `
@@ -431,14 +343,14 @@ weight = 1
 pageRef = "/blog/post3"
 title = "My Post 3"
 url = "/blog/post3"
-	
+
 `)
 
 	commonTempl := `
 Main: {{ len .Site.Menus.main }}
 {{ range .Site.Menus.main }}
-{{ .Title }}|HasMenuCurrent: {{ $.HasMenuCurrent "main" . }}|Page: {{ .Page }}
-{{ .Title }}|IsMenuCurrent: {{ $.IsMenuCurrent "main" . }}|Page: {{ .Page }}
+{{ .Title }}|HasMenuCurrent: {{ $.HasMenuCurrent "main" . }}|Page: {{ .Page.Path }}
+{{ .Title }}|IsMenuCurrent: {{ $.IsMenuCurrent "main" . }}|Page: {{ .Page.Path }}
 {{ end }}
 `
 
@@ -494,34 +406,34 @@ title: "Contact: With  No Menu Defined"
 
 	b.AssertFileContent("public/index.html", `
 Main: 5
-Home|HasMenuCurrent: false|Page: Page(/_index.md)
-Blog|HasMenuCurrent: false|Page: Page(/blog/_index.md)
-My Post 2: With Menu Defined|HasMenuCurrent: false|Page: Page(/blog/post2.md)
-My Post 3|HasMenuCurrent: false|Page: Page(/blog/post3.md)
-Contact Us|HasMenuCurrent: false|Page: Page(/contact.md)
+Home|HasMenuCurrent: false|Page: /
+Blog|HasMenuCurrent: false|Page: /blog
+My Post 2: With Menu Defined|HasMenuCurrent: false|Page: /blog/post2
+My Post 3|HasMenuCurrent: false|Page: /blog/post3
+Contact Us|HasMenuCurrent: false|Page: /contact
 `)
 
 	b.AssertFileContent("public/blog/post1/index.html", `
-Home|HasMenuCurrent: false|Page: Page(/_index.md)
-Blog|HasMenuCurrent: true|Page: Page(/blog/_index.md)
+Home|HasMenuCurrent: false|Page: /
+Blog|HasMenuCurrent: true|Page: /blog
 `)
 
 	b.AssertFileContent("public/blog/post2/index.html", `
-Home|HasMenuCurrent: false|Page: Page(/_index.md)
-Blog|HasMenuCurrent: true|Page: Page(/blog/_index.md)
-Blog|IsMenuCurrent: false|Page: Page(/blog/_index.md)
+Home|HasMenuCurrent: false|Page: /
+Blog|HasMenuCurrent: true|Page: /blog
+Blog|IsMenuCurrent: false|Page: /blog
 `)
 
 	b.AssertFileContent("public/blog/post3/index.html", `
-Home|HasMenuCurrent: false|Page: Page(/_index.md)
-Blog|HasMenuCurrent: true|Page: Page(/blog/_index.md)
+Home|HasMenuCurrent: false|Page: /
+Blog|HasMenuCurrent: true|Page: /blog
 `)
 
 	b.AssertFileContent("public/contact/index.html", `
-Contact Us|HasMenuCurrent: false|Page: Page(/contact.md)
-Contact Us|IsMenuCurrent: true|Page: Page(/contact.md)
-Blog|HasMenuCurrent: false|Page: Page(/blog/_index.md)
-Blog|IsMenuCurrent: false|Page: Page(/blog/_index.md)
+Contact Us|HasMenuCurrent: false|Page: /contact
+Contact Us|IsMenuCurrent: true|Page: /contact
+Blog|HasMenuCurrent: false|Page: /blog
+Blog|IsMenuCurrent: false|Page: /blog
 `)
 }
 
@@ -571,12 +483,7 @@ Page IsAncestor Self: {{ $page.IsAncestor $page }}
 Page IsDescendant Self: {{ $page.IsDescendant $page}}
 `
 
-	b := NewIntegrationTestBuilder(
-		IntegrationTestConfig{
-			T:           t,
-			TxtarString: files,
-		},
-	).Build()
+	b := Test(t, files)
 
 	b.AssertFileContent("public/tests/index.html", `
 Tests|/tests/|IsMenuCurrent = true|HasMenuCurrent = false
@@ -587,4 +494,207 @@ Section IsDescendant Self: false
 Page IsAncestor Self: false
 Page IsDescendant Self: false
 `)
+}
+
+func TestMenusNewConfigSetup(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+baseURL = "https://example.com"
+title = "Hugo Menu Test"
+[menus]
+[[menus.main]]
+name = "Home"
+url = "/"
+pre = "<span>"
+post = "</span>"
+weight = 1
+-- layouts/index.html --
+{{ range $i, $e := site.Menus.main }}
+Menu Item: {{ $i }}: {{ .Pre }}{{ .Name }}{{ .Post }}|{{ .URL }}|
+{{ end }}
+`
+
+	b := Test(t, files)
+
+	b.AssertFileContent("public/index.html", `
+Menu Item: 0: <span>Home</span>|/|
+`)
+}
+
+// Issue #11062
+func TestMenusSubDirInBaseURL(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+baseURL = "https://example.com/foo/"
+title = "Hugo Menu Test"
+[menus]
+[[menus.main]]
+name = "Posts"
+url = "/posts"
+weight = 1
+-- layouts/index.html --
+{{ range $i, $e := site.Menus.main }}
+Menu Item: {{ $i }}|{{ .URL }}|
+{{ end }}
+`
+
+	b := Test(t, files)
+
+	b.AssertFileContent("public/index.html", `
+Menu Item: 0|/foo/posts|
+`)
+}
+
+func TestSectionPagesMenuMultilingualWarningIssue12306(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+disableKinds = ['section','rss','sitemap','taxonomy','term']
+defaultContentLanguageInSubdir = true
+sectionPagesMenu = "main"
+[languages.en]
+[languages.fr]
+-- layouts/_default/home.html --
+{{- range site.Menus.main -}}
+  <a href="{{ .URL }}">{{ .Name }}</a>
+{{- end -}}
+-- layouts/_default/single.html --
+{{ .Title }}
+-- content/p1.en.md --
+---
+title: p1
+menu: main
+---
+-- content/p1.fr.md --
+---
+title: p1
+menu: main
+---
+-- content/p2.en.md --
+---
+title: p2
+menu: main
+---
+`
+
+	b := Test(t, files, TestOptWarn())
+
+	b.AssertFileContent("public/en/index.html", `<a href="/en/p1/">p1</a><a href="/en/p2/">p2</a>`)
+	b.AssertFileContent("public/fr/index.html", `<a href="/fr/p1/">p1</a>`)
+	b.AssertLogContains("! WARN")
+}
+
+func TestSectionPagesIssue12399(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+disableKinds = ['rss','sitemap','taxonomy','term']
+capitalizeListTitles = false
+pluralizeListTitles = false
+sectionPagesMenu = 'main'
+-- content/p1.md --
+---
+title: p1
+---
+-- content/s1/p2.md --
+---
+title: p2
+menus: main
+---
+-- content/s1/p3.md --
+---
+title: p3
+---
+-- layouts/_default/list.html --
+{{ range site.Menus.main }}<a href="{{ .URL }}">{{ .Name }}</a>{{ end }}
+-- layouts/_default/single.html --
+{{ .Title }}
+`
+
+	b := Test(t, files)
+
+	b.AssertFileExists("public/index.html", true)
+	b.AssertFileContent("public/index.html", `<a href="/s1/p2/">p2</a><a href="/s1/">s1</a>`)
+}
+
+// Issue 13161
+func TestMenuNameAndTitleFallback(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+disableKinds = ['rss','sitemap','taxonomy','term']
+[[menus.main]]
+name = 'P1_ME_Name'
+title = 'P1_ME_Title'
+pageRef = '/p1'
+weight = 10
+[[menus.main]]
+pageRef = '/p2'
+weight = 20
+[[menus.main]]
+pageRef = '/p3'
+weight = 30
+[[menus.main]]
+name = 'S1_ME_Name'
+title = 'S1_ME_Title'
+pageRef = '/s1'
+weight = 40
+[[menus.main]]
+pageRef = '/s2'
+weight = 50
+[[menus.main]]
+pageRef = '/s3'
+weight = 60
+-- content/p1.md  --
+---
+title: P1_Title
+---
+-- content/p2.md  --
+---
+title: P2_Title
+---
+-- content/p3.md  --
+---
+title: P3_Title
+linkTitle: P3_LinkTitle
+---
+-- content/s1/_index.md --
+---
+title: S1_Title
+---
+-- content/s2/_index.md --
+---
+title: S2_Title
+---
+-- content/s3/_index.md --
+---
+title: S3_Title
+linkTitle: S3_LinkTitle
+---
+-- layouts/_default/single.html --
+{{ .Content }}
+-- layouts/_default/list.html --
+{{ .Content }}
+-- layouts/_default/home.html --
+{{- range site.Menus.main }}
+URL: {{ .URL }}| Name: {{ .Name }}| Title: {{ .Title }}| PageRef: {{ .PageRef }}| Page.Title: {{ .Page.Title }}| Page.LinkTitle: {{ .Page.LinkTitle }}|
+{{- end }}
+`
+
+	b := Test(t, files)
+	b.AssertFileContent("public/index.html",
+		`URL: /p1/| Name: P1_ME_Name| Title: P1_ME_Title| PageRef: /p1| Page.Title: P1_Title| Page.LinkTitle: P1_Title|`,
+		`URL: /p2/| Name: P2_Title| Title: P2_Title| PageRef: /p2| Page.Title: P2_Title| Page.LinkTitle: P2_Title|`,
+		`URL: /p3/| Name: P3_LinkTitle| Title: P3_Title| PageRef: /p3| Page.Title: P3_Title| Page.LinkTitle: P3_LinkTitle|`,
+		`URL: /s1/| Name: S1_ME_Name| Title: S1_ME_Title| PageRef: /s1| Page.Title: S1_Title| Page.LinkTitle: S1_Title|`,
+		`URL: /s2/| Name: S2_Title| Title: S2_Title| PageRef: /s2| Page.Title: S2_Title| Page.LinkTitle: S2_Title|`,
+		`URL: /s3/| Name: S3_LinkTitle| Title: S3_Title| PageRef: /s3| Page.Title: S3_Title| Page.LinkTitle: S3_LinkTitle|`,
+	)
 }

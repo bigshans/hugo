@@ -33,7 +33,6 @@ const (
 	lineNosKey     = "linenos"
 	hlLinesKey     = "hl_lines"
 	linosStartKey  = "linenostart"
-	noHlKey        = "nohl"
 )
 
 var DefaultConfig = Config{
@@ -45,18 +44,20 @@ var DefaultConfig = Config{
 	NoClasses:          true,
 	LineNumbersInTable: true,
 	TabWidth:           4,
+	WrapperClass:       "highlight",
 }
 
 type Config struct {
 	Style string
 
+	// Enable syntax highlighting of fenced code blocks.
 	CodeFences bool
+
+	// The class or classes to use for the outermost element of the highlighted code.
+	WrapperClass string
 
 	// Use inline CSS styles.
 	NoClasses bool
-
-	// No highlighting.
-	NoHl bool
 
 	// When set, line numbers will be printed.
 	LineNos            bool
@@ -84,7 +85,7 @@ type Config struct {
 	GuessSyntax bool
 }
 
-func (cfg Config) ToHTMLOptions() []html.Option {
+func (cfg Config) toHTMLOptions() []html.Option {
 	var lineAnchors string
 	if cfg.LineAnchors != "" {
 		lineAnchors = cfg.LineAnchors + "-"
@@ -136,7 +137,7 @@ func applyOptions(opts any, cfg *Config) error {
 }
 
 func applyOptionsFromString(opts string, cfg *Config) error {
-	optsm, err := parseHightlightOptions(opts)
+	optsm, err := parseHighlightOptions(opts)
 	if err != nil {
 		return err
 	}
@@ -188,7 +189,7 @@ func ApplyLegacyConfig(cfg config.Provider, conf *Config) error {
 	return nil
 }
 
-func parseHightlightOptions(in string) (map[string]any, error) {
+func parseHighlightOptions(in string) (map[string]any, error) {
 	in = strings.Trim(in, " ")
 	opts := make(map[string]any)
 
@@ -229,8 +230,6 @@ func normalizeHighlightOptions(m map[string]any) {
 
 	for k, v := range m {
 		switch k {
-		case noHlKey:
-			m[noHlKey] = cast.ToBool(v)
 		case lineNosKey:
 			if v == "table" || v == "inline" {
 				m["lineNumbersInTable"] = v == "table"

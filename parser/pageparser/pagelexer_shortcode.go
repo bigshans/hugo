@@ -22,7 +22,6 @@ type lexerShortcodeState struct {
 	elementStepNum     int             // step number in element
 	paramElements      int             // number of elements (name + value = 2) found first
 	openShortcodes     map[string]bool // set of shortcodes in open state
-
 }
 
 // Shortcode syntax
@@ -323,6 +322,7 @@ func lexInsideShortcode(l *pageLexer) stateFunc {
 		}
 		l.closingState++
 		l.isInline = false
+		l.elementStepNum = 0
 		l.emit(tScClose)
 	case r == '\\':
 		l.ignore()

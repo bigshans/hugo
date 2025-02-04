@@ -14,6 +14,7 @@
 package hugo
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"os"
@@ -24,11 +25,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bep/godartsass"
+	"github.com/bep/logg"
+
+	"github.com/bep/godartsass/v2"
+	"github.com/gohugoio/hugo/common/hcontext"
 	"github.com/gohugoio/hugo/common/hexec"
+	"github.com/gohugoio/hugo/common/loggers"
+	"github.com/gohugoio/hugo/common/maps"
 	"github.com/gohugoio/hugo/hugofs/files"
 
 	"github.com/spf13/afero"
+
+	iofs "io/fs"
 
 	"github.com/gohugoio/hugo/config"
 	"github.com/gohugoio/hugo/hugofs"
@@ -46,8 +54,10 @@ var (
 	vendorInfo string
 )
 
-// Info contains information about the current Hugo environment
-type Info struct {
+var _ maps.StoreProvider = (*HugoInfo)(nil)
+
+// HugoInfo contains information about the current Hugo environment
+type HugoInfo struct {
 	CommitHash string
 	BuildDate  string
 
@@ -60,36 +70,108 @@ type Info struct {
 	// version of go that the Hugo binary was built with
 	GoVersion string
 
+	conf ConfigProvider
 	deps []*Dependency
+
+	store *maps.Scratch
+
+	// Context gives access to some of the context scoped variables.
+	Context Context
 }
 
 // Version returns the current version as a comparable version string.
-func (i Info) Version() VersionString {
+func (i HugoInfo) Version() VersionString {
 	return CurrentVersion.Version()
 }
 
 // Generator a Hugo meta generator HTML tag.
-func (i Info) Generator() template.HTML {
+func (i HugoInfo) Generator() template.HTML {
 	return template.HTML(fmt.Sprintf(`<meta name="generator" content="Hugo %s">`, CurrentVersion.String()))
 }
 
-func (i Info) IsProduction() bool {
+// IsDevelopment reports whether the current running environment is "development".
+func (i HugoInfo) IsDevelopment() bool {
+	return i.Environment == EnvironmentDevelopment
+}
+
+// IsProduction reports whether the current running environment is "production".
+func (i HugoInfo) IsProduction() bool {
 	return i.Environment == EnvironmentProduction
 }
 
-func (i Info) IsExtended() bool {
+// IsServer reports whether the built-in server is running.
+func (i HugoInfo) IsServer() bool {
+	return i.conf.Running()
+}
+
+// IsExtended reports whether the Hugo binary is the extended version.
+func (i HugoInfo) IsExtended() bool {
 	return IsExtended
 }
 
+// WorkingDir returns the project working directory.
+func (i HugoInfo) WorkingDir() string {
+	return i.conf.WorkingDir()
+}
+
 // Deps gets a list of dependencies for this Hugo build.
-func (i Info) Deps() []*Dependency {
+func (i HugoInfo) Deps() []*Dependency {
 	return i.deps
 }
 
+func (i HugoInfo) Store() *maps.Scratch {
+	return i.store
+}
+
+// Deprecated: Use hugo.IsMultihost instead.
+func (i HugoInfo) IsMultiHost() bool {
+	Deprecate("hugo.IsMultiHost", "Use hugo.IsMultihost instead.", "v0.124.0")
+	return i.conf.IsMultihost()
+}
+
+// IsMultihost reports whether each configured language has a unique baseURL.
+func (i HugoInfo) IsMultihost() bool {
+	return i.conf.IsMultihost()
+}
+
+// IsMultilingual reports whether there are two or more configured languages.
+func (i HugoInfo) IsMultilingual() bool {
+	return i.conf.IsMultilingual()
+}
+
+type contextKey string
+
+var markupScope = hcontext.NewContextDispatcher[string](contextKey("markupScope"))
+
+type Context struct{}
+
+func (c Context) MarkupScope(ctx context.Context) string {
+	return GetMarkupScope(ctx)
+}
+
+// SetMarkupScope sets the markup scope in the context.
+func SetMarkupScope(ctx context.Context, s string) context.Context {
+	return markupScope.Set(ctx, s)
+}
+
+// GetMarkupScope gets the markup scope from the context.
+func GetMarkupScope(ctx context.Context) string {
+	return markupScope.Get(ctx)
+}
+
+// ConfigProvider represents the config options that are relevant for HugoInfo.
+type ConfigProvider interface {
+	Environment() string
+	Running() bool
+	WorkingDir() string
+	IsMultihost() bool
+	IsMultilingual() bool
+}
+
 // NewInfo creates a new Hugo Info object.
-func NewInfo(environment string, deps []*Dependency) Info {
-	if environment == "" {
-		environment = EnvironmentProduction
+func NewInfo(conf ConfigProvider, deps []*Dependency) HugoInfo {
+	if conf.Environment() == "" {
+		panic("environment not set")
 	}
 	var (
 		commitHash string
@@ -104,18 +186,20 @@ func NewInfo(environment string, deps []*Dependency) Info {
 		goVersion = bi.GoVersion
 	}
 
-	return Info{
+	return HugoInfo{
 		CommitHash:  commitHash,
 		BuildDate:   buildDate,
-		Environment: environment,
+		Environment: conf.Environment(),
+		conf:        conf,
 		deps:        deps,
+		store:       maps.NewScratch(),
 		GoVersion:   goVersion,
 	}
 }
 
 // GetExecEnviron creates and gets the common os/exec environment used in the
 // external programs we interact with via os/exec, e.g. postcss.
-func GetExecEnviron(workDir string, cfg config.Provider, fs afero.Fs) []string {
+func GetExecEnviron(workDir string, cfg config.AllProvider, fs afero.Fs) []string {
 	var env []string
 	nodepath := filepath.Join(workDir, "node_modules")
 	if np := os.Getenv("NODE_PATH"); np != "" {
@@ -123,13 +207,17 @@ func GetExecEnviron(workDir string, cfg config.Provider, fs afero.Fs) []string {
 	}
 	config.SetEnvVars(&env, "NODE_PATH", nodepath)
 	config.SetEnvVars(&env, "PWD", workDir)
-	config.SetEnvVars(&env, "HUGO_ENVIRONMENT", cfg.GetString("environment"))
-	config.SetEnvVars(&env, "HUGO_ENV", cfg.GetString("environment"))
-
-	config.SetEnvVars(&env, "HUGO_PUBLISHDIR", filepath.Join(workDir, cfg.GetString("publishDirOrig")))
+	config.SetEnvVars(&env, "HUGO_ENVIRONMENT", cfg.Environment())
+	config.SetEnvVars(&env, "HUGO_ENV", cfg.Environment())
+	config.SetEnvVars(&env, "HUGO_PUBLISHDIR", filepath.Join(workDir, cfg.BaseConfig().PublishDir))
 
 	if fs != nil {
-		fis, err := afero.ReadDir(fs, files.FolderJSConfig)
+		var fis []iofs.DirEntry
+		d, err := fs.Open(files.FolderJSConfig)
+		if err == nil {
+			fis, err = d.(iofs.ReadDirFile).ReadDir(-1)
+		}
+
 		if err == nil {
 			for _, fi := range fis {
 				key := fmt.Sprintf("HUGO_FILE_%s", strings.ReplaceAll(strings.ToUpper(fi.Name()), ".", "_"))
@@ -154,8 +242,10 @@ type buildInfo struct {
 	*debug.BuildInfo
 }
 
-var bInfo *buildInfo
-var bInfoInit sync.Once
+var (
+	bInfo     *buildInfo
+	bInfoInit sync.Once
+)
 
 func getBuildInfo() *buildInfo {
 	bInfoInit.Do(func() {
@@ -182,7 +272,6 @@ func getBuildInfo() *buildInfo {
 				bInfo.GoArch = s.Value
 			}
 		}
-
 	})
 
 	return bInfo
@@ -220,13 +309,16 @@ func GetDependencyListNonGo() []string {
 	if IsExtended {
 		deps = append(
 			deps,
-			formatDep("github.com/sass/libsass", "3.6.5"),
-			formatDep("github.com/webmproject/libwebp", "v1.2.4"),
+			formatDep("github.com/sass/libsass", "3.6.6"),
+			formatDep("github.com/webmproject/libwebp", "v1.3.2"),
 		)
 	}
 
 	if dartSass := dartSassVersion(); dartSass.ProtocolVersion != "" {
-		const dartSassPath = "github.com/sass/dart-sass-embedded"
+		dartSassPath := "github.com/sass/dart-sass-embedded"
+		if IsDartSassGeV2() {
+			dartSassPath = "github.com/sass/dart-sass"
+		}
 		deps = append(deps,
 			formatDep(dartSassPath+"/protocol", dartSass.ProtocolVersion),
 			formatDep(dartSassPath+"/compiler", dartSass.CompilerVersion),
@@ -271,11 +363,84 @@ type Dependency struct {
 }
 
 func dartSassVersion() godartsass.DartSassVersion {
-	// This is also duplicated in the dartsass package.
-	const dartSassEmbeddedBinaryName = "dart-sass-embedded"
-	if !hexec.InPath(dartSassEmbeddedBinaryName) {
+	if DartSassBinaryName == "" || !IsDartSassGeV2() {
 		return godartsass.DartSassVersion{}
 	}
-	v, _ := godartsass.Version(dartSassEmbeddedBinaryName)
+	v, _ := godartsass.Version(DartSassBinaryName)
 	return v
+}
+
+// DartSassBinaryName is the name of the Dart Sass binary to use.
+// TODO(bep) find a better place for this.
+var DartSassBinaryName string
+
+func init() {
+	DartSassBinaryName = os.Getenv("DART_SASS_BINARY")
+	if DartSassBinaryName == "" {
+		for _, name := range dartSassBinaryNamesV2 {
+			if hexec.InPath(name) {
+				DartSassBinaryName = name
+				break
+			}
+		}
+		if DartSassBinaryName == "" {
+			if hexec.InPath(dartSassBinaryNameV1) {
+				DartSassBinaryName = dartSassBinaryNameV1
+			}
+		}
+	}
+}
+
+var (
+	dartSassBinaryNameV1  = "dart-sass-embedded"
+	dartSassBinaryNamesV2 = []string{"dart-sass", "sass"}
+)
+
+// TODO(bep) we eventually want to remove this, but keep it for a while to throw an informative error.
+// We stopped supporting the old binary in Hugo 0.139.0.
+func IsDartSassGeV2() bool {
+	// dart-sass-embedded was the first version of the embedded Dart Sass before it was moved into the main project.
+	return !strings.Contains(DartSassBinaryName, "embedded")
+}
+
+// Deprecate informs about a deprecation starting at the given version.
+//
+// A deprecation typically needs a simple change in the template, but doing so will make the template incompatible with older versions.
+// Theme maintainers generally want
+// 1. No warnings or errors in the console when building a Hugo site.
+// 2. Their theme to work for at least the last few Hugo versions.
+func Deprecate(item, alternative string, version string) {
+	level := deprecationLogLevelFromVersion(version)
+	DeprecateLevel(item, alternative, version, level)
+}
+
+// DeprecateLevel informs about a deprecation logging at the given level.
+func DeprecateLevel(item, alternative, version string, level logg.Level) {
+	var msg string
+	if level == logg.LevelError {
+		msg = fmt.Sprintf("%s was deprecated in Hugo %s and subsequently removed. %s", item, version, alternative)
+	} else {
+		msg = fmt.Sprintf("%s was deprecated in Hugo %s and will be removed in a future release. %s", item, version, alternative)
+	}
+
+	loggers.Log().Logger().WithLevel(level).WithField(loggers.FieldNameCmd, "deprecated").Logf("%s", msg)
+}
+
+// We usually do about one minor version a month.
+// We want people to run at least the current and previous version without any warnings.
+// We want people who don't update Hugo that often to see the warnings and errors before we remove the feature.
+func deprecationLogLevelFromVersion(ver string) logg.Level {
+	from := MustParseVersion(ver)
+	to := CurrentVersion
+	minorDiff := to.Minor - from.Minor
+	switch {
+	case minorDiff >= 15:
+		// Start failing the build after about 15 months.
+		return logg.LevelError
+	case minorDiff >= 3:
+		// Start printing warnings after about 3 months.
+		return logg.LevelWarn
+	default:
+		return logg.LevelInfo
+	}
 }

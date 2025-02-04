@@ -16,6 +16,7 @@ package hqt
 import (
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
 
@@ -37,6 +38,11 @@ var IsSameString qt.Checker = &stringChecker{
 var IsSameType qt.Checker = &typeChecker{
 	argNames: []string{"got", "want"},
 }
+
+// IsSameFloat64 asserts that two float64 values are equal within a small delta.
+var IsSameFloat64 = qt.CmpEquals(cmp.Comparer(func(a, b float64) bool {
+	return math.Abs(a-b) < 0.0001
+}))
 
 type argNames []string
 
@@ -88,6 +94,32 @@ func normalizeString(s string) string {
 		lines[i] = strings.Join(strings.Fields(strings.TrimSpace(line)), "")
 	}
 	return strings.Join(lines, "\n")
+}
+
+// IsAllElementsEqual asserts that all elements in the slice are equal.
+var IsAllElementsEqual qt.Checker = &sliceAllElementsEqualChecker{
+	argNames: []string{"got"},
+}
+
+type sliceAllElementsEqualChecker struct {
+	argNames
+}
+
+func (c *sliceAllElementsEqualChecker) Check(got any, args []any, note func(key string, value any)) (err error) {
+	gotSlice := reflect.ValueOf(got)
+	numElements := gotSlice.Len()
+	if numElements < 2 {
+		return nil
+	}
+	first := gotSlice.Index(0).Interface()
+	// Check that the others are equal to the first.
+	for i := 1; i < numElements; i++ {
+		if diff := cmp.Diff(first, gotSlice.Index(i).Interface()); diff != "" {
+			return fmt.Errorf("element %d is not equal to the first element:\n%s", i, diff)
+		}
+	}
+
+	return nil
 }
 
 // DeepAllowUnexported creates an option to allow compare of unexported types

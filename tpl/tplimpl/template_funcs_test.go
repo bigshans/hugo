@@ -15,6 +15,7 @@ package tplimpl_test
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -24,6 +25,9 @@ import (
 )
 
 func TestTemplateFuncsExamples(t *testing.T) {
+	if runtime.GOARCH == "s390x" {
+		t.Skip("Skip on s390x, see https://github.com/gohugoio/hugo/issues/13204")
+	}
 	t.Parallel()
 
 	files := `
@@ -37,7 +41,7 @@ home=["HTML"]
 -- files/README.txt --
 Hugo Rocks!
 -- content/blog/hugo-rocks.md --
---- 
+---
 title: "**BatMan**"
 ---
 `
@@ -61,8 +65,10 @@ title: "**BatMan**"
 		ns := nsf(d)
 		for _, mm := range ns.MethodMappings {
 			for _, example := range mm.Examples {
-				if strings.Contains(example[0], "errorf") {
-					// This will fail the build, so skip for now.
+				// These will fail the build, so skip.
+				if strings.Contains(example[0], "errorf") ||
+					strings.Contains(example[0], "transform.XMLEscape") ||
+					strings.Contains(example[0], "math.Rand") {
 					continue
 				}
 				templates = append(templates, example[0])

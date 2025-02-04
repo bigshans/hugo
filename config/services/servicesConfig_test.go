@@ -36,6 +36,8 @@ id = "ga_id"
 disableInlineCSS = true
 [services.twitter]
 disableInlineCSS = true
+[services.x]
+disableInlineCSS = true
 `
 	cfg, err := config.FromConfigString(tomlConfig, "toml")
 	c.Assert(err, qt.IsNil)
@@ -54,7 +56,7 @@ disableInlineCSS = true
 func TestUseSettingsFromRootIfSet(t *testing.T) {
 	c := qt.New(t)
 
-	cfg := config.NewWithTestDefaults()
+	cfg := config.New()
 	cfg.Set("disqusShortname", "root_short")
 	cfg.Set("googleAnalytics", "ga_root")
 

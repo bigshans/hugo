@@ -14,6 +14,7 @@
 package collections
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"html/template"
@@ -23,15 +24,9 @@ import (
 	"time"
 
 	"github.com/gohugoio/hugo/common/maps"
+	"github.com/gohugoio/hugo/config/testconfig"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/gohugoio/hugo/common/loggers"
-	"github.com/gohugoio/hugo/config"
-	"github.com/gohugoio/hugo/deps"
-	"github.com/gohugoio/hugo/helpers"
-	"github.com/gohugoio/hugo/hugofs"
-	"github.com/gohugoio/hugo/langs"
-	"github.com/spf13/afero"
 )
 
 type tstNoStringer struct{}
@@ -40,7 +35,7 @@ func TestAfter(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
 
-	ns := New(&deps.Deps{Language: langs.NewDefaultLanguage(config.New())})
+	ns := newNs()
 
 	for i, test := range []struct {
 		index  any
@@ -76,8 +71,7 @@ func TestAfter(t *testing.T) {
 	}
 }
 
-type tstGrouper struct {
-}
+type tstGrouper struct{}
 
 type tstGroupers []*tstGrouper
 
@@ -86,8 +80,7 @@ func (g tstGrouper) Group(key any, items any) (any, error) {
 	return fmt.Sprintf("%v(%d)", key, ilen), nil
 }
 
-type tstGrouper2 struct {
-}
+type tstGrouper2 struct{}
 
 func (g *tstGrouper2) Group(key any, items any) (any, error) {
 	ilen := reflect.ValueOf(items).Len()
@@ -97,7 +90,7 @@ func (g *tstGrouper2) Group(key any, items any) (any, error) {
 func TestGroup(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	ns := New(&deps.Deps{Language: langs.NewDefaultLanguage(config.New())})
+	ns := newNs()
 
 	for i, test := range []struct {
 		key    any
@@ -133,15 +126,13 @@ func TestDelimit(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
 
-	ns := New(&deps.Deps{
-		Language: langs.NewDefaultLanguage(config.New()),
-	})
+	ns := newNs()
 
 	for i, test := range []struct {
 		seq       any
 		delimiter any
 		last      any
-		expect    template.HTML
+		expect    string
 	}{
 		{[]string{"class1", "class2", "class3"}, " ", nil, "class1 class2 class3"},
 		{[]int{1, 2, 3, 4, 5}, ",", nil, "1,2,3,4,5"},
@@ -170,13 +161,13 @@ func TestDelimit(t *testing.T) {
 	} {
 		errMsg := qt.Commentf("[%d] %v", i, test)
 
-		var result template.HTML
+		var result string
 		var err error
 
 		if test.last == nil {
-			result, err = ns.Delimit(test.seq, test.delimiter)
+			result, err = ns.Delimit(context.Background(), test.seq, test.delimiter)
 		} else {
-			result, err = ns.Delimit(test.seq, test.delimiter, test.last)
+			result, err = ns.Delimit(context.Background(), test.seq, test.delimiter, test.last)
 		}
 
 		c.Assert(err, qt.IsNil, errMsg)
@@ -187,7 +178,7 @@ func TestDelimit(t *testing.T) {
 func TestDictionary(t *testing.T) {
 	c := qt.New(t)
 
-	ns := New(&deps.Deps{Language: langs.NewDefaultLanguage(config.New())})
+	ns := newNs()
 
 	for i, test := range []struct {
 		values []any
@@ -226,7 +217,7 @@ func TestDictionary(t *testing.T) {
 func TestReverse(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	ns := New(&deps.Deps{Language: langs.NewDefaultLanguage(config.New())})
+	ns := newNs()
 
 	s := []string{"a", "b", "c"}
 	reversed, err := ns.Reverse(s)
@@ -241,43 +232,11 @@ func TestReverse(t *testing.T) {
 	c.Assert(err, qt.Not(qt.IsNil))
 }
 
-func TestEchoParam(t *testing.T) {
-	t.Parallel()
-	c := qt.New(t)
-
-	ns := New(&deps.Deps{Language: langs.NewDefaultLanguage(config.New())})
-
-	for i, test := range []struct {
-		a      any
-		key    any
-		expect any
-	}{
-		{[]int{1, 2, 3}, 1, int64(2)},
-		{[]uint{1, 2, 3}, 1, uint64(2)},
-		{[]float64{1.1, 2.2, 3.3}, 1, float64(2.2)},
-		{[]string{"foo", "bar", "baz"}, 1, "bar"},
-		{[]TstX{{A: "a", B: "b"}, {A: "c", B: "d"}, {A: "e", B: "f"}}, 1, ""},
-		{map[string]int{"foo": 1, "bar": 2, "baz": 3}, "bar", int64(2)},
-		{map[string]uint{"foo": 1, "bar": 2, "baz": 3}, "bar", uint64(2)},
-		{map[string]float64{"foo": 1.1, "bar": 2.2, "baz": 3.3}, "bar", float64(2.2)},
-		{map[string]string{"foo": "FOO", "bar": "BAR", "baz": "BAZ"}, "bar", "BAR"},
-		{map[string]TstX{"foo": {A: "a", B: "b"}, "bar": {A: "c", B: "d"}, "baz": {A: "e", B: "f"}}, "bar", ""},
-		{map[string]any{"foo": nil}, "foo", ""},
-		{(*[]string)(nil), "bar", ""},
-	} {
-		errMsg := qt.Commentf("[%d] %v", i, test)
-
-		result := ns.EchoParam(test.a, test.key)
-
-		c.Assert(result, qt.Equals, test.expect, errMsg)
-	}
-}
-
 func TestFirst(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
 
-	ns := New(&deps.Deps{Language: langs.NewDefaultLanguage(config.New())})
+	ns := newNs()
 
 	for i, test := range []struct {
 		limit  any
@@ -314,8 +273,7 @@ func TestFirst(t *testing.T) {
 func TestIn(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-
-	ns := New(&deps.Deps{Language: langs.NewDefaultLanguage(config.New())})
+	ns := newNs()
 
 	for i, test := range []struct {
 		l1     any
@@ -391,7 +349,7 @@ func TestIntersect(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
 
-	ns := New(&deps.Deps{Language: langs.NewDefaultLanguage(config.New())})
+	ns := newNs()
 
 	for i, test := range []struct {
 		l1, l2 any
@@ -481,7 +439,7 @@ func TestIntersect(t *testing.T) {
 func TestIsSet(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	ns := newTestNs()
+	ns := newNs()
 
 	for i, test := range []struct {
 		a      any
@@ -518,7 +476,7 @@ func TestLast(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
 
-	ns := New(&deps.Deps{Language: langs.NewDefaultLanguage(config.New())})
+	ns := newNs()
 
 	for i, test := range []struct {
 		limit  any
@@ -554,72 +512,10 @@ func TestLast(t *testing.T) {
 	}
 }
 
-func TestQuerify(t *testing.T) {
-	t.Parallel()
-	c := qt.New(t)
-	ns := New(&deps.Deps{Language: langs.NewDefaultLanguage(config.New())})
-
-	for i, test := range []struct {
-		params []any
-		expect any
-	}{
-		{[]any{"a", "b"}, "a=b"},
-		{[]any{"a", "b", "c", "d", "f", " &"}, `a=b&c=d&f=+%26`},
-		{[]any{[]string{"a", "b"}}, "a=b"},
-		{[]any{[]string{"a", "b", "c", "d", "f", " &"}}, `a=b&c=d&f=+%26`},
-		{[]any{[]any{"x", "y"}}, `x=y`},
-		{[]any{[]any{"x", 5}}, `x=5`},
-		// errors
-		{[]any{5, "b"}, false},
-		{[]any{"a", "b", "c"}, false},
-		{[]any{[]string{"a", "b", "c"}}, false},
-		{[]any{[]string{"a", "b"}, "c"}, false},
-		{[]any{[]any{"c", "d", "e"}}, false},
-	} {
-		errMsg := qt.Commentf("[%d] %v", i, test.params)
-
-		result, err := ns.Querify(test.params...)
-
-		if b, ok := test.expect.(bool); ok && !b {
-			c.Assert(err, qt.Not(qt.IsNil), errMsg)
-			continue
-		}
-
-		c.Assert(err, qt.IsNil, errMsg)
-		c.Assert(result, qt.Equals, test.expect, errMsg)
-	}
-}
-
-func BenchmarkQuerify(b *testing.B) {
-	ns := New(&deps.Deps{Language: langs.NewDefaultLanguage(config.New())})
-	params := []any{"a", "b", "c", "d", "f", " &"}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := ns.Querify(params...)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkQuerifySlice(b *testing.B) {
-	ns := New(&deps.Deps{Language: langs.NewDefaultLanguage(config.New())})
-	params := []string{"a", "b", "c", "d", "f", " &"}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := ns.Querify(params)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
 func TestSeq(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	ns := New(&deps.Deps{Language: langs.NewDefaultLanguage(config.New())})
+	ns := newNs()
 
 	for i, test := range []struct {
 		args   []any
@@ -663,7 +559,7 @@ func TestSeq(t *testing.T) {
 func TestShuffle(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	ns := New(&deps.Deps{Language: langs.NewDefaultLanguage(config.New())})
+	ns := newNs()
 
 	for i, test := range []struct {
 		seq     any
@@ -703,13 +599,12 @@ func TestShuffle(t *testing.T) {
 func TestShuffleRandomising(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	ns := New(&deps.Deps{Language: langs.NewDefaultLanguage(config.New())})
+	ns := newNs()
 
 	// Note that this test can fail with false negative result if the shuffle
 	// of the sequence happens to be the same as the original sequence. However
 	// the probability of the event is 10^-158 which is negligible.
 	seqLen := 100
-	rand.Seed(time.Now().UTC().UnixNano())
 
 	for _, test := range []struct {
 		seq []int
@@ -734,7 +629,7 @@ func TestShuffleRandomising(t *testing.T) {
 func TestSlice(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	ns := New(&deps.Deps{Language: langs.NewDefaultLanguage(config.New())})
+	ns := newNs()
 
 	for i, test := range []struct {
 		args     []any
@@ -758,7 +653,7 @@ func TestUnion(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
 
-	ns := New(&deps.Deps{Language: langs.NewDefaultLanguage(config.New())})
+	ns := newNs()
 
 	for i, test := range []struct {
 		l1     any
@@ -847,7 +742,7 @@ func TestUnion(t *testing.T) {
 func TestUniq(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	ns := New(&deps.Deps{Language: langs.NewDefaultLanguage(config.New())})
+	ns := newNs()
 	for i, test := range []struct {
 		l      any
 		expect any
@@ -905,6 +800,7 @@ func (x TstX) TstRv2() string {
 	return "r" + x.B
 }
 
+//lint:ignore U1000 reflect test
 func (x TstX) unexportedMethod() string {
 	return x.unexported
 }
@@ -933,7 +829,7 @@ func (x TstX) String() string {
 
 type TstX struct {
 	A, B       string
-	unexported string
+	unexported string //lint:ignore U1000 reflect test
 }
 
 type TstParams struct {
@@ -971,22 +867,6 @@ func ToTstXIs(slice any) []TstXI {
 	return tis
 }
 
-func newDeps(cfg config.Provider) *deps.Deps {
-	l := langs.NewLanguage("en", cfg)
-	l.Set("i18nDir", "i18n")
-	cs, err := helpers.NewContentSpec(l, loggers.NewErrorLogger(), afero.NewMemMapFs(), nil)
-	if err != nil {
-		panic(err)
-	}
-	return &deps.Deps{
-		Language:    l,
-		Cfg:         cfg,
-		Fs:          hugofs.NewMem(l),
-		ContentSpec: cs,
-		Log:         loggers.NewErrorLogger(),
-	}
-}
-
-func newTestNs() *Namespace {
-	return New(newDeps(config.NewWithTestDefaults()))
+func newNs() *Namespace {
+	return New(testconfig.GetTestDeps(nil, nil))
 }

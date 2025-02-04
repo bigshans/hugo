@@ -1,44 +1,42 @@
 ---
 title: Basic usage
-linktitle: Basic usage
 description: Hugo's command line interface (CLI) is fully featured but simple to use, even for those with limited experience working from the command line.
 categories: [getting started]
 keywords: [usage,livereload,command,flags]
 menu:
   docs:
-    parent: "getting-started"
-    weight: 40
-weight: 40
-sections_weight: 40
-aliases: [/overview/usage/,/extras/livereload/,/doc/usage/,/usage/]
+    parent: getting-started
+    weight: 30
+weight: 30
 toc: true
+aliases: [/overview/usage/,/extras/livereload/,/doc/usage/,/usage/]
 ---
 
 ## Test your installation
 
 After [installing] Hugo, test your installation by running:
 
-```bash
+```sh
 hugo version
 ```
 
 You should see something like:
 
 ```text
-hugo v0.105.0-0e3b42b4a9bdeb4d866210819fc6ddcf51582ffa+extended linux/amd64 BuildDate=2022-10-28T12:29:05Z VendorInfo=snap:0.105.0
+hugo v0.123.0-3c8a4713908e48e6523f058ca126710397aa4ed5+extended linux/amd64 BuildDate=2024-02-19T16:32:38Z VendorInfo=gohugoio
 ```
 
 ## Display available commands
 
 To see a list of the available commands and flags:
 
-```bash
+```sh
 hugo help
 ```
 
 To get help with a subcommand, use the `--help` flag. For example:
 
-```bash
+```sh
 hugo server --help
 ```
 
@@ -46,7 +44,7 @@ hugo server --help
 
 To build your site, `cd` into your project directory and run:
 
-```bash
+```sh
 hugo
 ```
 
@@ -55,22 +53,30 @@ The [`hugo`] command builds your site, publishing the files to the `public` dire
 {{% note %}}
 Hugo does not clear the `public` directory before building your site. Existing files are overwritten, but not deleted. This behavior is intentional to prevent the inadvertent removal of files that you may have added to the `public` directory after the build.
 
-Depending on your needs, you may wish to manually clear the contents of the public directory before every build.
+Depending on your needs, you may wish to manually clear the contents of the `public` directory before every build.
 {{% /note %}}
 
 ## Draft, future, and expired content
 
 Hugo allows you to set `draft`, `date`, `publishDate`, and `expiryDate` in the [front matter] of your content. By default, Hugo will not publish content when:
 
-
 - The `draft` value is `true`
 - The `date` is in the future
 - The `publishDate` is in the future
 - The `expiryDate` is in the past
 
+{{< new-in 0.123.0 >}}
+
+{{% note %}}
+Hugo publishes descendants of draft, future, and expired [node](g) pages. To prevent publication of these descendants, use the [`cascade`] front matter field to cascade [build options] to the descendant pages.
+
+[build options]: /content-management/build-options/
+[`cascade`]: /content-management/front-matter/#cascade-field
+{{% /note %}}
+
 You can override the default behavior when running `hugo` or `hugo server` with command line flags:
 
-```bash
+```sh
 hugo --buildDrafts    # or -D
 hugo --buildExpired   # or -E
 hugo --buildFuture    # or -F
@@ -88,11 +94,11 @@ A common practice is to manually clear the contents of the `public` directory be
 
 To view your site while developing layouts or creating content, `cd` into your project directory and run:
 
-```bash
+```sh
 hugo server
 ```
 
-The [`hugo server`] command builds your site into memory, and serves your pages using a minimal HTTP server. When you run `hugo server` it will display the URL of your local site:
+The [`hugo server`] command builds your site and serves your pages using a minimal HTTP server. When you run `hugo server` it will display the URL of your local site:
 
 ```text
 Web Server is available at http://localhost:1313/ 
@@ -110,37 +116,37 @@ While the server is running, Hugo injects JavaScript into the generated HTML pag
 
 When editing content, if you want your browser to automatically redirect to the page you last modified, run:
 
-```bash
+```sh
 hugo server --navigateToChanged
 ```
 
 ## Deploy your site
 
 {{% note %}}
-As noted above, Hugo does not clear the public directory before building your site. Manually clear the contents of the public directory before each build to remove draft, expired, and future content.
+As noted above, Hugo does not clear the `public` directory before building your site. Manually clear the contents of the `public` directory before each build to remove draft, expired, and future content.
 {{% /note %}}
 
 When you are ready to deploy your site, run:
 
-```bash
+```sh
 hugo
 ```
 
-This builds your site, publishing the files to the public directory. The directory structure will look something like this:
+This builds your site, publishing the files to the `public` directory. The directory structure will look something like this:
 
 ```text
 public/
 ├── categories/
-│   ├── index.html
-│   └── index.xml  <-- RSS feed for this section
-├── post/
-│   ├── my-first-post/
-│   │   └── index.html
-│   ├── index.html
-│   └── index.xml  <-- RSS feed for this section
+│   ├── index.html
+│   └── index.xml  <-- RSS feed for this section
+├── posts/
+│   ├── my-first-post/
+│   │   └── index.html
+│   ├── index.html
+│   └── index.xml  <-- RSS feed for this section
 ├── tags/
-│   ├── index.html
-│   └── index.xml  <-- RSS feed for this section
+│   ├── index.html
+│   └── index.xml  <-- RSS feed for this section
 ├── index.html
 ├── index.xml      <-- RSS feed for the site
 └── sitemap.xml
@@ -152,7 +158,7 @@ Most of our users deploy their sites using a CI/CD workflow, where a push[^1] to
 
 Learn more in the [hosting and deployment] section.
 
-[^1]: The Git repository contains the entire project directory, typically excluding the public directory because the site is built _after_ the push.
+[^1]: The Git repository contains the entire project directory, typically excluding the `public` directory because the site is built _after_ the push.
 
 [`--destination`]: /commands/hugo/#options
 [`hugo server`]: /commands/hugo_server/

@@ -14,6 +14,7 @@
 package page
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -23,21 +24,24 @@ import (
 	"strings"
 	"time"
 
-	"errors"
-
+	"github.com/gohugoio/hugo/common/hstrings"
+	"github.com/gohugoio/hugo/common/maps"
 	"github.com/gohugoio/hugo/helpers"
+	"github.com/gohugoio/hugo/resources/kinds"
 )
 
-// PermalinkExpander holds permalin mappings per section.
+// PermalinkExpander holds permalink mappings per section.
 type PermalinkExpander struct {
 	// knownPermalinkAttributes maps :tags in a permalink specification to a
 	// function which, given a page and the tag, returns the resulting string
 	// to be used to replace that tag.
 	knownPermalinkAttributes map[string]pageToPermaAttribute
 
-	expanders map[string]func(Page) (string, error)
+	expanders map[string]map[string]func(Page) (string, error)
 
-	ps *helpers.PathSpec
+	urlize func(uri string) string
+
+	patternCache *maps.Cache[string, func(Page) (string, error)]
 }
 
 // Time for checking date formats. Every field is different than the
@@ -67,9 +71,12 @@ func (p PermalinkExpander) callback(attr string) (pageToPermaAttribute, bool) {
 }
 
 // NewPermalinkExpander creates a new PermalinkExpander configured by the given
-// PathSpec.
-func NewPermalinkExpander(ps *helpers.PathSpec) (PermalinkExpander, error) {
-	p := PermalinkExpander{ps: ps}
+// urlize func.
+func NewPermalinkExpander(urlize func(uri string) string, patterns map[string]map[string]string) (PermalinkExpander, error) {
+	p := PermalinkExpander{
+		urlize:       urlize,
+		patternCache: maps.NewCache[string, func(Page) (string, error)](),
+	}
 
 	p.knownPermalinkAttributes = map[string]pageToPermaAttribute{
 		"year":           p.pageToPermalinkDate,
@@ -87,26 +94,50 @@ func NewPermalinkExpander(ps *helpers.PathSpec) (PermalinkExpander, error) {
 		"filename":       p.pageToPermalinkFilename,
 	}
 
-	patterns := ps.Cfg.GetStringMapString("permalinks")
-	if patterns == nil {
-		return p, nil
-	}
+	p.expanders = make(map[string]map[string]func(Page) (string, error))
 
-	e, err := p.parse(patterns)
-	if err != nil {
-		return p, err
+	for kind, patterns := range patterns {
+		e, err := p.parse(patterns)
+		if err != nil {
+			return p, err
+		}
+		p.expanders[kind] = e
 	}
-
-	p.expanders = e
 
 	return p, nil
+}
+
+// Escape sequence for colons in permalink patterns.
+const escapePlaceholderColon = "\x00"
+
+func (l PermalinkExpander) normalizeEscapeSequencesIn(s string) (string, bool) {
+	s2 := strings.ReplaceAll(s, "\\:", escapePlaceholderColon)
+	return s2, s2 != s
+}
+
+func (l PermalinkExpander) normalizeEscapeSequencesOut(result string) string {
+	return strings.ReplaceAll(result, escapePlaceholderColon, ":")
+}
+
+// ExpandPattern expands the path in p with the specified expand pattern.
+func (l PermalinkExpander) ExpandPattern(pattern string, p Page) (string, error) {
+	expand, err := l.getOrParsePattern(pattern)
+	if err != nil {
+		return "", err
+	}
+
+	return expand(p)
 }
 
 // Expand expands the path in p according to the rules defined for the given key.
 // If no rules are found for the given key, an empty string is returned.
 func (l PermalinkExpander) Expand(key string, p Page) (string, error) {
-	expand, found := l.expanders[key]
+	expanders, found := l.expanders[p.Kind()]
+	if !found {
+		return "", nil
+	}
 
+	expand, found := expanders[key]
 	if !found {
 		return "", nil
 	}
@@ -114,21 +145,30 @@ func (l PermalinkExpander) Expand(key string, p Page) (string, error) {
 	return expand(p)
 }
 
-func (l PermalinkExpander) parse(patterns map[string]string) (map[string]func(Page) (string, error), error) {
-	expanders := make(map[string]func(Page) (string, error))
+// Allow " " and / to represent the root section.
+var sectionCutSet = " /"
 
-	// Allow " " and / to represent the root section.
-	const sectionCutSet = " /" + string(os.PathSeparator)
+func init() {
+	if string(os.PathSeparator) != "/" {
+		sectionCutSet += string(os.PathSeparator)
+	}
+}
 
-	for k, pattern := range patterns {
-		k = strings.Trim(k, sectionCutSet)
+func (l PermalinkExpander) getOrParsePattern(pattern string) (func(Page) (string, error), error) {
+	return l.patternCache.GetOrCreate(pattern, func() (func(Page) (string, error), error) {
+		var normalized bool
+		pattern, normalized = l.normalizeEscapeSequencesIn(pattern)
 
-		if !l.validate(pattern) {
-			return nil, &permalinkExpandError{pattern: pattern, err: errPermalinkIllFormed}
-		}
-
-		pattern := pattern
 		matches := attributeRegexp.FindAllStringSubmatch(pattern, -1)
+		if matches == nil {
+			result := pattern
+			if normalized {
+				result = l.normalizeEscapeSequencesOut(result)
+			}
+			return func(p Page) (string, error) {
+				return result, nil
+			}, nil
+		}
 
 		callbacks := make([]pageToPermaAttribute, len(matches))
 		replacements := make([]string, len(matches))
@@ -145,11 +185,7 @@ func (l PermalinkExpander) parse(patterns map[string]string) (map[string]func(Pa
 			callbacks[i] = callback
 		}
 
-		expanders[k] = func(p Page) (string, error) {
-			if matches == nil {
-				return pattern, nil
-			}
-
+		return func(p Page) (string, error) {
 			newField := pattern
 
 			for i, replacement := range replacements {
@@ -161,12 +197,29 @@ func (l PermalinkExpander) parse(patterns map[string]string) (map[string]func(Pa
 				}
 
 				newField = strings.Replace(newField, replacement, newAttr, 1)
+			}
 
+			if normalized {
+				newField = l.normalizeEscapeSequencesOut(newField)
 			}
 
 			return newField, nil
+		}, nil
+	})
+}
+
+func (l PermalinkExpander) parse(patterns map[string]string) (map[string]func(Page) (string, error), error) {
+	expanders := make(map[string]func(Page) (string, error))
+
+	for k, pattern := range patterns {
+		k = strings.Trim(k, sectionCutSet)
+
+		expander, err := l.getOrParsePattern(pattern)
+		if err != nil {
+			return nil, err
 		}
 
+		expanders[k] = expander
 	}
 
 	return expanders, nil
@@ -178,34 +231,6 @@ type pageToPermaAttribute func(Page, string) (string, error)
 
 var attributeRegexp = regexp.MustCompile(`:\w+(\[.+?\])?`)
 
-// validate determines if a PathPattern is well-formed
-func (l PermalinkExpander) validate(pp string) bool {
-	fragments := strings.Split(pp[1:], "/")
-	bail := false
-	for i := range fragments {
-		if bail {
-			return false
-		}
-		if len(fragments[i]) == 0 {
-			bail = true
-			continue
-		}
-
-		matches := attributeRegexp.FindAllStringSubmatch(fragments[i], -1)
-		if matches == nil {
-			continue
-		}
-
-		for _, match := range matches {
-			k := match[0][1:]
-			if _, ok := l.callback(k); !ok {
-				return false
-			}
-		}
-	}
-	return true
-}
-
 type permalinkExpandError struct {
 	pattern string
 	err     error
@@ -215,10 +240,7 @@ func (pee *permalinkExpandError) Error() string {
 	return fmt.Sprintf("error expanding %q: %s", pee.pattern, pee.err)
 }
 
-var (
-	errPermalinkIllFormed        = errors.New("permalink ill-formed")
-	errPermalinkAttributeUnknown = errors.New("permalink attribute not recognised")
-)
+var errPermalinkAttributeUnknown = errors.New("permalink attribute not recognised")
 
 func (l PermalinkExpander) pageToPermalinkDate(p Page, dateField string) (string, error) {
 	// a Page contains a Node which provides a field Date, time.Time
@@ -244,25 +266,27 @@ func (l PermalinkExpander) pageToPermalinkDate(p Page, dateField string) (string
 
 // pageToPermalinkTitle returns the URL-safe form of the title
 func (l PermalinkExpander) pageToPermalinkTitle(p Page, _ string) (string, error) {
-	return l.ps.URLize(p.Title()), nil
+	return l.urlize(p.Title()), nil
 }
 
 // pageToPermalinkFilename returns the URL-safe form of the filename
 func (l PermalinkExpander) pageToPermalinkFilename(p Page, _ string) (string, error) {
-	name := p.File().TranslationBaseName()
+	name := l.translationBaseName(p)
 	if name == "index" {
 		// Page bundles; the directory name will hopefully have a better name.
 		dir := strings.TrimSuffix(p.File().Dir(), helpers.FilePathSeparator)
 		_, name = filepath.Split(dir)
+	} else if name == "_index" {
+		return "", nil
 	}
 
-	return l.ps.URLize(name), nil
+	return l.urlize(name), nil
 }
 
 // if the page has a slug, return the slug, else return the title
 func (l PermalinkExpander) pageToPermalinkSlugElseTitle(p Page, a string) (string, error) {
 	if p.Slug() != "" {
-		return l.ps.URLize(p.Slug()), nil
+		return l.urlize(p.Slug()), nil
 	}
 	return l.pageToPermalinkTitle(p, a)
 }
@@ -270,7 +294,7 @@ func (l PermalinkExpander) pageToPermalinkSlugElseTitle(p Page, a string) (strin
 // if the page has a slug, return the slug, else return the filename
 func (l PermalinkExpander) pageToPermalinkSlugElseFilename(p Page, a string) (string, error) {
 	if p.Slug() != "" {
-		return l.ps.URLize(p.Slug()), nil
+		return l.urlize(p.Slug()), nil
 	}
 	return l.pageToPermalinkFilename(p, a)
 }
@@ -281,6 +305,13 @@ func (l PermalinkExpander) pageToPermalinkSection(p Page, _ string) (string, err
 
 func (l PermalinkExpander) pageToPermalinkSections(p Page, _ string) (string, error) {
 	return p.CurrentSection().SectionsPath(), nil
+}
+
+func (l PermalinkExpander) translationBaseName(p Page) string {
+	if p.File() == nil {
+		return ""
+	}
+	return p.File().TranslationBaseName()
 }
 
 var (
@@ -335,7 +366,10 @@ func (l PermalinkExpander) toSliceFunc(cut string) func(s []string) []string {
 		return func(ss []string) int {
 			// Prevent out of bound situations. It would not make
 			// much sense to panic here.
-			if n > len(ss) {
+			if n >= len(ss) {
+				if low {
+					return -1
+				}
 				return len(ss)
 			}
 			return n
@@ -351,7 +385,11 @@ func (l PermalinkExpander) toSliceFunc(cut string) func(s []string) []string {
 			if len(s) == 0 {
 				return nil
 			}
-			v := s[toN(s)]
+			n := toN(s)
+			if n < 0 {
+				return []string{}
+			}
+			v := s[n]
 			if v == "" {
 				return nil
 			}
@@ -365,7 +403,58 @@ func (l PermalinkExpander) toSliceFunc(cut string) func(s []string) []string {
 		if len(s) == 0 {
 			return nil
 		}
-		return s[toN1(s):toN2(s)]
+		n1, n2 := toN1(s), toN2(s)
+		if n1 < 0 || n2 < 0 {
+			return []string{}
+		}
+		return s[n1:n2]
 	}
+}
 
+var permalinksKindsSupport = []string{kinds.KindPage, kinds.KindSection, kinds.KindTaxonomy, kinds.KindTerm}
+
+// DecodePermalinksConfig decodes the permalinks configuration in the given map
+func DecodePermalinksConfig(m map[string]any) (map[string]map[string]string, error) {
+	permalinksConfig := make(map[string]map[string]string)
+
+	permalinksConfig[kinds.KindPage] = make(map[string]string)
+	permalinksConfig[kinds.KindSection] = make(map[string]string)
+	permalinksConfig[kinds.KindTaxonomy] = make(map[string]string)
+	permalinksConfig[kinds.KindTerm] = make(map[string]string)
+
+	config := maps.CleanConfigStringMap(m)
+	for k, v := range config {
+		switch v := v.(type) {
+		case string:
+			// [permalinks]
+			//   key = '...'
+
+			// To successfully be backward compatible, "default" patterns need to be set for both page and term
+			permalinksConfig[kinds.KindPage][k] = v
+			permalinksConfig[kinds.KindTerm][k] = v
+
+		case maps.Params:
+			// [permalinks.key]
+			//   xyz = ???
+
+			if hstrings.InSlice(permalinksKindsSupport, k) {
+				// TODO: warn if we overwrite an already set value
+				for k2, v2 := range v {
+					switch v2 := v2.(type) {
+					case string:
+						permalinksConfig[k][k2] = v2
+
+					default:
+						return nil, fmt.Errorf("permalinks configuration invalid: unknown value %q for key %q for kind %q", v2, k2, k)
+					}
+				}
+			} else {
+				return nil, fmt.Errorf("permalinks configuration not supported for kind %q, supported kinds are %v", k, permalinksKindsSupport)
+			}
+
+		default:
+			return nil, fmt.Errorf("permalinks configuration invalid: unknown value %q for key %q", v, k)
+		}
+	}
+	return permalinksConfig, nil
 }

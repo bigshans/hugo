@@ -67,8 +67,11 @@ func (h VersionString) String() string {
 
 // Compare implements the compare.Comparer interface.
 func (h VersionString) Compare(other any) int {
-	v := MustParseVersion(h.String())
-	return compareVersions(v, other)
+	return compareVersions(h.Version(), other)
+}
+
+func (h VersionString) Version() Version {
+	return MustParseVersion(h.String())
 }
 
 // Eq implements the compare.Eqer interface.
@@ -148,6 +151,9 @@ func BuildVersionString() string {
 	}
 	if IsExtended {
 		version += "+extended"
+	}
+	if IsWithdeploy {
+		version += "+withdeploy"
 	}
 
 	osArch := bi.GoOS + "/" + bi.GoArch
@@ -264,7 +270,6 @@ func compareFloatWithVersion(v1 float64, v2 Version) int {
 
 	if v1maj > v2.Major {
 		return 1
-
 	}
 
 	if v1maj < v2.Major {
@@ -276,7 +281,6 @@ func compareFloatWithVersion(v1 float64, v2 Version) int {
 	}
 
 	return -1
-
 }
 
 func GoMinorVersion() int {

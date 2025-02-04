@@ -23,31 +23,29 @@ import (
 
 func TestRSSOutput(t *testing.T) {
 	t.Parallel()
-	var (
-		cfg, fs = newTestCfg()
-		th      = newTestHelper(cfg, fs, t)
-	)
 
 	rssLimit := len(weightedSources) - 1
 
-	rssURI := "index.xml"
-
+	cfg, fs := newTestCfg()
 	cfg.Set("baseURL", "http://auth/bub/")
 	cfg.Set("title", "RSSTest")
 	cfg.Set("rssLimit", rssLimit)
+	th, configs := newTestHelperFromProvider(cfg, fs, t)
+
+	rssURI := "index.xml"
 
 	for _, src := range weightedSources {
 		writeSource(t, fs, filepath.Join("content", "sect", src[0]), src[1])
 	}
 
-	buildSingleSite(t, deps.DepsCfg{Fs: fs, Cfg: cfg}, BuildCfg{})
+	buildSingleSite(t, deps.DepsCfg{Fs: fs, Configs: configs}, BuildCfg{})
 
 	// Home RSS
 	th.assertFileContent(filepath.Join("public", rssURI), "<?xml", "rss version", "RSSTest")
 	// Section RSS
 	th.assertFileContent(filepath.Join("public", "sect", rssURI), "<?xml", "rss version", "Sects on RSSTest")
 	// Taxonomy RSS
-	th.assertFileContent(filepath.Join("public", "categories", "hugo", rssURI), "<?xml", "rss version", "hugo on RSSTest")
+	th.assertFileContent(filepath.Join("public", "categories", "hugo", rssURI), "<?xml", "rss version", "Hugo on RSSTest")
 
 	// RSS Item Limit
 	content := readWorkingDir(t, fs, filepath.Join("public", rssURI))
@@ -97,4 +95,52 @@ Figure:
 	b.Build(BuildCfg{})
 
 	b.AssertFileContent("public/index.xml", "img src=&#34;http://example.com/images/sunset.jpg")
+}
+
+// Issue 13332.
+func TestRSSCanonifyURLsSubDir(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+baseURL = 'https://example.org/subdir'
+disableKinds = ['section','sitemap','taxonomy','term']
+[markup.goldmark.renderHooks.image]
+enableDefault = true
+[markup.goldmark.renderHooks.link]
+enableDefault = true
+-- layouts/_default/_markup/render-image.html --
+{{- $u := urls.Parse .Destination -}}
+{{- $src := $u.String | relURL -}}
+<img srcset="{{ $src }}" src="{{ $src }} 2x">
+<img src="{{ $src }}">
+{{- /**/ -}}
+-- layouts/_default/home.html --
+{{ .Content }}|
+-- layouts/_default/single.html --
+{{ .Content }}|
+-- layouts/_default/rss.xml --
+{{ with site.GetPage "/s1/p2" }}
+  {{ .Content | transform.XMLEscape | safeHTML }}
+{{ end }}
+-- content/s1/p1.md --
+---
+title: p1
+---
+-- content/s1/p2/index.md --
+---
+title: p2
+---
+![alt](a.jpg)
+
+[p1](/s1/p1)
+-- content/s1/p2/a.jpg --
+`
+
+	b := Test(t, files)
+
+	b.AssertFileContent("public/index.xml", "https://example.org/subdir/s1/p1/")
+	b.AssertFileContent("public/index.xml",
+		"img src=&#34;https://example.org/subdir/a.jpg",
+		"img srcset=&#34;https://example.org/subdir/a.jpg&#34; src=&#34;https://example.org/subdir/a.jpg 2x")
 }

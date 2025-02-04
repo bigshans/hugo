@@ -11,18 +11,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package filecache
+package filecache_test
 
 import (
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/spf13/afero"
 
+	"github.com/gohugoio/hugo/cache/filecache"
 	"github.com/gohugoio/hugo/config"
+	"github.com/gohugoio/hugo/config/testconfig"
 
 	qt "github.com/frankban/quicktest"
 )
@@ -57,22 +58,20 @@ dir = "/path/to/c4"
 	cfg, err := config.FromConfigString(configStr, "toml")
 	c.Assert(err, qt.IsNil)
 	fs := afero.NewMemMapFs()
-	decoded, err := DecodeConfig(fs, cfg)
-	c.Assert(err, qt.IsNil)
-
-	c.Assert(len(decoded), qt.Equals, 6)
+	decoded := testconfig.GetTestConfigs(fs, cfg).Base.Caches
+	c.Assert(len(decoded), qt.Equals, 7)
 
 	c2 := decoded["getcsv"]
 	c.Assert(c2.MaxAge.String(), qt.Equals, "11h0m0s")
-	c.Assert(c2.Dir, qt.Equals, filepath.FromSlash("/path/to/c2/filecache/getcsv"))
+	c.Assert(c2.DirCompiled, qt.Equals, filepath.FromSlash("/path/to/c2/filecache/getcsv"))
 
 	c3 := decoded["images"]
 	c.Assert(c3.MaxAge, qt.Equals, time.Duration(-1))
-	c.Assert(c3.Dir, qt.Equals, filepath.FromSlash("/path/to/c3/filecache/images"))
+	c.Assert(c3.DirCompiled, qt.Equals, filepath.FromSlash("/path/to/c3/filecache/images"))
 
 	c4 := decoded["getresource"]
 	c.Assert(c4.MaxAge, qt.Equals, time.Duration(-1))
-	c.Assert(c4.Dir, qt.Equals, filepath.FromSlash("/path/to/c4/filecache/getresource"))
+	c.Assert(c4.DirCompiled, qt.Equals, filepath.FromSlash("/path/to/c4/filecache/getresource"))
 }
 
 func TestDecodeConfigIgnoreCache(t *testing.T) {
@@ -106,10 +105,8 @@ dir = "/path/to/c4"
 	cfg, err := config.FromConfigString(configStr, "toml")
 	c.Assert(err, qt.IsNil)
 	fs := afero.NewMemMapFs()
-	decoded, err := DecodeConfig(fs, cfg)
-	c.Assert(err, qt.IsNil)
-
-	c.Assert(len(decoded), qt.Equals, 6)
+	decoded := testconfig.GetTestConfigs(fs, cfg).Base.Caches
+	c.Assert(len(decoded), qt.Equals, 7)
 
 	for _, v := range decoded {
 		c.Assert(v.MaxAge, qt.Equals, time.Duration(0))
@@ -118,7 +115,7 @@ dir = "/path/to/c4"
 
 func TestDecodeConfigDefault(t *testing.T) {
 	c := qt.New(t)
-	cfg := newTestConfig()
+	cfg := config.New()
 
 	if runtime.GOOS == "windows" {
 		cfg.Set("resourceDir", "c:\\cache\\resources")
@@ -128,71 +125,22 @@ func TestDecodeConfigDefault(t *testing.T) {
 		cfg.Set("resourceDir", "/cache/resources")
 		cfg.Set("cacheDir", "/cache/thecache")
 	}
-
-	fs := afero.NewMemMapFs()
-
-	decoded, err := DecodeConfig(fs, cfg)
-
-	c.Assert(err, qt.IsNil)
-
-	c.Assert(len(decoded), qt.Equals, 6)
-
-	imgConfig := decoded[cacheKeyImages]
-	jsonConfig := decoded[cacheKeyGetJSON]
-
-	if runtime.GOOS == "windows" {
-		c.Assert(imgConfig.Dir, qt.Equals, filepath.FromSlash("_gen/images"))
-	} else {
-		c.Assert(imgConfig.Dir, qt.Equals, "_gen/images")
-		c.Assert(jsonConfig.Dir, qt.Equals, "/cache/thecache/hugoproject/filecache/getjson")
-	}
-
-	c.Assert(imgConfig.isResourceDir, qt.Equals, true)
-	c.Assert(jsonConfig.isResourceDir, qt.Equals, false)
-}
-
-func TestDecodeConfigInvalidDir(t *testing.T) {
-	t.Parallel()
-
-	c := qt.New(t)
-
-	configStr := `
-resourceDir = "myresources"
-contentDir = "content"
-dataDir = "data"
-i18nDir = "i18n"
-layoutDir = "layouts"
-assetDir = "assets"
-archeTypedir = "archetypes"
-
-[caches]
-[caches.getJSON]
-maxAge = "10m"
-dir = "/"
-
-`
-	if runtime.GOOS == "windows" {
-		configStr = strings.Replace(configStr, "/", "c:\\\\", 1)
-	}
-
-	cfg, err := config.FromConfigString(configStr, "toml")
-	c.Assert(err, qt.IsNil)
-	fs := afero.NewMemMapFs()
-
-	_, err = DecodeConfig(fs, cfg)
-	c.Assert(err, qt.Not(qt.IsNil))
-}
-
-func newTestConfig() config.Provider {
-	cfg := config.NewWithTestDefaults()
 	cfg.Set("workingDir", filepath.FromSlash("/my/cool/hugoproject"))
-	cfg.Set("contentDir", "content")
-	cfg.Set("dataDir", "data")
-	cfg.Set("resourceDir", "resources")
-	cfg.Set("i18nDir", "i18n")
-	cfg.Set("layoutDir", "layouts")
-	cfg.Set("archetypeDir", "archetypes")
-	cfg.Set("assetDir", "assets")
 
-	return cfg
+	fs := afero.NewMemMapFs()
+	decoded := testconfig.GetTestConfigs(fs, cfg).Base.Caches
+	c.Assert(len(decoded), qt.Equals, 7)
+
+	imgConfig := decoded[filecache.CacheKeyImages]
+	jsonConfig := decoded[filecache.CacheKeyGetJSON]
+
+	if runtime.GOOS == "windows" {
+		c.Assert(imgConfig.DirCompiled, qt.Equals, filepath.FromSlash("_gen/images"))
+	} else {
+		c.Assert(imgConfig.DirCompiled, qt.Equals, "_gen/images")
+		c.Assert(jsonConfig.DirCompiled, qt.Equals, "/cache/thecache/hugoproject/filecache/getjson")
+	}
+
+	c.Assert(imgConfig.IsResourceDir, qt.Equals, true)
+	c.Assert(jsonConfig.IsResourceDir, qt.Equals, false)
 }

@@ -15,6 +15,7 @@ package images
 
 import (
 	"image"
+	"image/color"
 	"image/draw"
 	"io"
 	"strings"
@@ -31,19 +32,16 @@ import (
 var _ gift.Filter = (*textFilter)(nil)
 
 type textFilter struct {
-	text, color string
+	text        string
+	color       color.Color
 	x, y        int
+	alignx      string
 	size        float64
 	linespacing int
 	fontSource  hugio.ReadSeekCloserProvider
 }
 
 func (f textFilter) Draw(dst draw.Image, src image.Image, options *gift.Options) {
-	color, err := hexStringToColor(f.color)
-	if err != nil {
-		panic(err)
-	}
-
 	// Load and parse font
 	ttf := goregular.TTF
 	if f.fontSource != nil {
@@ -74,32 +72,68 @@ func (f textFilter) Draw(dst draw.Image, src image.Image, options *gift.Options)
 
 	d := font.Drawer{
 		Dst:  dst,
-		Src:  image.NewUniform(color),
+		Src:  image.NewUniform(f.color),
 		Face: face,
 	}
 
 	gift.New().Draw(dst, src)
 
-	// Draw text, consider and include linebreaks
 	maxWidth := dst.Bounds().Dx() - 20
+
+	var availableWidth int
+	switch f.alignx {
+	case "right":
+		availableWidth = f.x
+	case "center":
+		availableWidth = min((maxWidth-f.x), f.x) * 2
+	case "left":
+		availableWidth = maxWidth - f.x
+	}
+
 	fontHeight := face.Metrics().Ascent.Ceil()
+
+	// Calculate lines, consider and include linebreaks
+	finalLines := []string{}
+	f.text = strings.ReplaceAll(f.text, "\r", "")
+	for _, line := range strings.Split(f.text, "\n") {
+		currentLine := ""
+		// Break each line at the maximum width.
+		for _, str := range strings.Fields(line) {
+			fieldStrWidth := font.MeasureString(face, str)
+			currentLineStrWidth := font.MeasureString(face, currentLine)
+
+			if (currentLineStrWidth.Ceil() + fieldStrWidth.Ceil()) >= availableWidth {
+				finalLines = append(finalLines, currentLine)
+				currentLine = ""
+			}
+			currentLine += str + " "
+		}
+		finalLines = append(finalLines, currentLine)
+	}
 
 	// Correct y position based on font and size
 	f.y = f.y + fontHeight
 
 	// Start position
 	y := f.y
-	d.Dot = fixed.P(f.x, f.y)
 
-	// Draw text and break line at max width
-	parts := strings.Fields(f.text)
-	for _, str := range parts {
-		strWith := font.MeasureString(face, str)
-		if (d.Dot.X.Ceil() + strWith.Ceil()) >= maxWidth {
-			y = y + fontHeight + f.linespacing
-			d.Dot = fixed.P(f.x, y)
+	// Draw text line by line
+	for _, line := range finalLines {
+		line = strings.TrimSpace(line)
+		strWidth := font.MeasureString(face, line)
+		var x int
+		switch f.alignx {
+		case "right":
+			x = f.x - strWidth.Ceil()
+		case "center":
+			x = f.x - (strWidth.Ceil() / 2)
+
+		case "left":
+			x = f.x
 		}
-		d.DrawString(str + " ")
+		d.Dot = fixed.P(x, y)
+		d.DrawString(line)
+		y = y + fontHeight + f.linespacing
 	}
 }
 

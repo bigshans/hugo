@@ -70,8 +70,10 @@ func init() {
 			},
 		)
 
-		ns.AddMethodMapping(ctx.SanitizeURL,
-			[]string{"sanitizeURL", "sanitizeurl"},
+		ns.AddMethodMapping(func(v any) (any, error) {
+			return v, nil
+		},
+			[]string{"try"},
 			[][2]string{},
 		)
 

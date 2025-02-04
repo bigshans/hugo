@@ -14,19 +14,19 @@
 package transform
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 
+	"github.com/gohugoio/hugo/resources"
 	"github.com/gohugoio/hugo/resources/resource"
 
+	"github.com/gohugoio/hugo/common/hashing"
 	"github.com/gohugoio/hugo/common/types"
 
 	"github.com/mitchellh/mapstructure"
 
-	"errors"
-
-	"github.com/gohugoio/hugo/helpers"
 	"github.com/gohugoio/hugo/parser/metadecoders"
 
 	"github.com/spf13/cast"
@@ -71,8 +71,8 @@ func (ns *Namespace) Unmarshal(args ...any) (any, error) {
 			key += decoder.OptionsKey()
 		}
 
-		return ns.cache.GetOrCreate(key, func() (any, error) {
-			f := metadecoders.FormatFromMediaType(r.MediaType())
+		v, err := ns.cacheUnmarshal.GetOrCreate(key, func(string) (*resources.StaleValue[any], error) {
+			f := metadecoders.FormatFromStrings(r.MediaType().Suffixes()...)
 			if f == "" {
 				return nil, fmt.Errorf("MIME %q not supported", r.MediaType())
 			}
@@ -88,8 +88,24 @@ func (ns *Namespace) Unmarshal(args ...any) (any, error) {
 				return nil, err
 			}
 
-			return decoder.Unmarshal(b, f)
+			v, err := decoder.Unmarshal(b, f)
+			if err != nil {
+				return nil, err
+			}
+
+			return &resources.StaleValue[any]{
+				Value: v,
+				StaleVersionFunc: func() uint32 {
+					return resource.StaleVersion(r)
+				},
+			}, nil
 		})
+		if err != nil {
+			return nil, err
+		}
+
+		return v.Value, nil
+
 	}
 
 	dataStr, err := types.ToStringE(data)
@@ -97,20 +113,35 @@ func (ns *Namespace) Unmarshal(args ...any) (any, error) {
 		return nil, fmt.Errorf("type %T not supported", data)
 	}
 
-	if dataStr == "" {
-		return nil, errors.New("no data to transform")
+	if strings.TrimSpace(dataStr) == "" {
+		return nil, nil
 	}
 
-	key := helpers.MD5String(dataStr)
+	key := hashing.MD5FromStringHexEncoded(dataStr)
 
-	return ns.cache.GetOrCreate(key, func() (any, error) {
+	v, err := ns.cacheUnmarshal.GetOrCreate(key, func(string) (*resources.StaleValue[any], error) {
 		f := decoder.FormatFromContentString(dataStr)
 		if f == "" {
 			return nil, errors.New("unknown format")
 		}
 
-		return decoder.Unmarshal([]byte(dataStr), f)
+		v, err := decoder.Unmarshal([]byte(dataStr), f)
+		if err != nil {
+			return nil, err
+		}
+
+		return &resources.StaleValue[any]{
+			Value: v,
+			StaleVersionFunc: func() uint32 {
+				return 0
+			},
+		}, nil
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	return v.Value, nil
 }
 
 func decodeDecoder(m map[string]any) (metadecoders.Decoder, error) {

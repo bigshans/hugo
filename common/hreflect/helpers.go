@@ -1,4 +1,4 @@
-// Copyright 2019 The Hugo Authors. All rights reserved.
+// Copyright 2024 The Hugo Authors. All rights reserved.
 // Some functions in this file (see comments) is based on the Go source code,
 // copyright The Go Authors and  governed by a BSD-style license.
 //
@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/gohugoio/hugo/common/htime"
+	"github.com/gohugoio/hugo/common/maps"
 	"github.com/gohugoio/hugo/common/types"
 )
 
@@ -188,6 +189,20 @@ func IsTime(tp reflect.Type) bool {
 	return false
 }
 
+// IsValid returns whether v is not nil and a valid value.
+func IsValid(v reflect.Value) bool {
+	if !v.IsValid() {
+		return false
+	}
+
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
+		return !v.IsNil()
+	}
+
+	return true
+}
+
 // AsTime returns v as a time.Time if possible.
 // The given location is only used if the value implements AsTimeProvider (e.g. go-toml local).
 // A zero Time and false is returned if this isn't possible.
@@ -208,6 +223,27 @@ func AsTime(v reflect.Value, loc *time.Location) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+// ToSliceAny converts the given value to a slice of any if possible.
+func ToSliceAny(v any) ([]any, bool) {
+	if v == nil {
+		return nil, false
+	}
+	switch vv := v.(type) {
+	case []any:
+		return vv, true
+	default:
+		vvv := reflect.ValueOf(v)
+		if vvv.Kind() == reflect.Slice {
+			out := make([]any, vvv.Len())
+			for i := 0; i < vvv.Len(); i++ {
+				out[i] = vvv.Index(i).Interface()
+			}
+			return out, true
+		}
+	}
+	return nil, false
+}
+
 func CallMethodByName(cxt context.Context, name string, v reflect.Value) []reflect.Value {
 	fn := v.MethodByName(name)
 	var args []reflect.Value
@@ -217,7 +253,7 @@ func CallMethodByName(cxt context.Context, name string, v reflect.Value) []refle
 			panic("not supported")
 		}
 		first := tp.In(0)
-		if first.Implements(ContextInterface) {
+		if IsContextType(first) {
 			args = append(args, reflect.ValueOf(cxt))
 		}
 	}
@@ -236,4 +272,25 @@ func indirectInterface(v reflect.Value) reflect.Value {
 	return v.Elem()
 }
 
-var ContextInterface = reflect.TypeOf((*context.Context)(nil)).Elem()
+var contextInterface = reflect.TypeOf((*context.Context)(nil)).Elem()
+
+var isContextCache = maps.NewCache[reflect.Type, bool]()
+
+type k string
+
+var contextTypeValue = reflect.TypeOf(context.WithValue(context.Background(), k("key"), 32))
+
+// IsContextType returns whether tp is a context.Context type.
+func IsContextType(tp reflect.Type) bool {
+	if tp == contextTypeValue {
+		return true
+	}
+	if tp == contextInterface {
+		return true
+	}
+
+	isContext, _ := isContextCache.GetOrCreate(tp, func() (bool, error) {
+		return tp.Implements(contextInterface), nil
+	})
+	return isContext
+}

@@ -20,7 +20,7 @@ const (
 	AutoHeadingIDTypeBlackfriday = "blackfriday"
 )
 
-// DefaultConfig holds the default Goldmark configuration.
+// Default holds the default Goldmark configuration.
 var Default = Config{
 	Extensions: Extensions{
 		Typographer: Typographer{
@@ -43,6 +43,36 @@ var Default = Config{
 		Linkify:         true,
 		LinkifyProtocol: "https",
 		TaskList:        true,
+		CJK: CJK{
+			Enable:                   false,
+			EastAsianLineBreaks:      false,
+			EastAsianLineBreaksStyle: "simple",
+			EscapedSpace:             false,
+		},
+		Extras: Extras{
+			Delete: Delete{
+				Enable: false,
+			},
+			Insert: Insert{
+				Enable: false,
+			},
+			Mark: Mark{
+				Enable: false,
+			},
+			Subscript: Subscript{
+				Enable: false,
+			},
+			Superscript: Superscript{
+				Enable: false,
+			},
+		},
+		Passthrough: Passthrough{
+			Enable: false,
+			Delimiters: DelimitersConfig{
+				Inline: [][]string{},
+				Block:  [][]string{},
+			},
+		},
 	},
 	Renderer: Renderer{
 		Unsafe: false,
@@ -60,15 +90,47 @@ var Default = Config{
 
 // Config configures Goldmark.
 type Config struct {
-	Renderer   Renderer
-	Parser     Parser
-	Extensions Extensions
+	Renderer               Renderer
+	Parser                 Parser
+	Extensions             Extensions
+	DuplicateResourceFiles bool
+	RenderHooks            RenderHooks
+}
+
+// RenderHooks contains configuration for Goldmark render hooks.
+type RenderHooks struct {
+	Image ImageRenderHook
+	Link  LinkRenderHook
+}
+
+// ImageRenderHook contains configuration for the image render hook.
+type ImageRenderHook struct {
+	// Enable the default image render hook.
+	// We need to know if it is set or not, hence the pointer.
+	EnableDefault *bool
+}
+
+func (h ImageRenderHook) IsEnableDefault() bool {
+	return h.EnableDefault != nil && *h.EnableDefault
+}
+
+// LinkRenderHook contains configuration for the link render hook.
+type LinkRenderHook struct {
+	// Disable the default image render hook.
+	// We need to know if it is set or not, hence the pointer.
+	EnableDefault *bool
+}
+
+func (h LinkRenderHook) IsEnableDefault() bool {
+	return h.EnableDefault != nil && *h.EnableDefault
 }
 
 type Extensions struct {
 	Typographer    Typographer
 	Footnote       bool
 	DefinitionList bool
+	Extras         Extras
+	Passthrough    Passthrough
 
 	// GitHub flavored markdown
 	Table           bool
@@ -76,6 +138,7 @@ type Extensions struct {
 	Linkify         bool
 	LinkifyProtocol string
 	TaskList        bool
+	CJK             CJK
 }
 
 // Typographer holds typographer configuration.
@@ -103,6 +166,72 @@ type Typographer struct {
 	RightAngleQuote string
 	// Value used for apostrophe.
 	Apostrophe string
+}
+
+// Extras holds extras configuration.
+// github.com/hugoio/hugo-goldmark-extensions/extras
+type Extras struct {
+	Delete      Delete
+	Insert      Insert
+	Mark        Mark
+	Subscript   Subscript
+	Superscript Superscript
+}
+
+type Delete struct {
+	Enable bool
+}
+
+type Insert struct {
+	Enable bool
+}
+
+type Mark struct {
+	Enable bool
+}
+
+type Subscript struct {
+	Enable bool
+}
+
+type Superscript struct {
+	Enable bool
+}
+
+// Passthrough holds passthrough configuration.
+// github.com/hugoio/hugo-goldmark-extensions/passthrough
+type Passthrough struct {
+	// Whether to enable the extension
+	Enable bool
+
+	// The delimiters to use for inline and block passthroughs.
+	Delimiters DelimitersConfig
+}
+
+type DelimitersConfig struct {
+	// The delimiters to use for inline passthroughs. Each entry in the list
+	// is a size-2 list of strings, where the first string is the opening delimiter
+	// and the second string is the closing delimiter, e.g.,
+	//
+	// [["$", "$"], ["\\(", "\\)"]]
+	Inline [][]string
+
+	// The delimiters to use for block passthroughs. Same format as Inline.
+	Block [][]string
+}
+
+type CJK struct {
+	// Whether to enable CJK support.
+	Enable bool
+
+	// Whether softline breaks between east asian wide characters should be ignored.
+	EastAsianLineBreaks bool
+
+	// Styles of Line Breaking of EastAsianLineBreaks: "simple" or "css3draft"
+	EastAsianLineBreaksStyle string
+
+	// Whether a '\' escaped half-space(0x20) should not be rendered.
+	EscapedSpace bool
 }
 
 type Renderer struct {
@@ -136,6 +265,6 @@ type Parser struct {
 type ParserAttribute struct {
 	// Enables custom attributes for titles.
 	Title bool
-	// Enables custom attributeds for blocks.
+	// Enables custom attributes for blocks.
 	Block bool
 }

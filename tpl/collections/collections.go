@@ -16,38 +16,30 @@
 package collections
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"html/template"
 	"math/rand"
-	"net/url"
 	"reflect"
 	"strings"
 	"time"
-
-	"errors"
 
 	"github.com/gohugoio/hugo/common/collections"
 	"github.com/gohugoio/hugo/common/maps"
 	"github.com/gohugoio/hugo/common/types"
 	"github.com/gohugoio/hugo/deps"
-	"github.com/gohugoio/hugo/helpers"
 	"github.com/gohugoio/hugo/langs"
 	"github.com/gohugoio/hugo/tpl/compare"
 	"github.com/spf13/cast"
 )
 
-func init() {
-	// htime.Now cannot be used here
-	rand.Seed(time.Now().UTC().UnixNano())
-}
-
 // New returns a new instance of the collections-namespaced template functions.
 func New(deps *deps.Deps) *Namespace {
-	if deps.Language == nil {
+	language := deps.Conf.Language()
+	if language == nil {
 		panic("language must be set")
 	}
-
-	loc := langs.GetLocation(deps.Language)
+	loc := langs.GetLocation(language)
 
 	return &Namespace{
 		loc:      loc,
@@ -100,7 +92,7 @@ func (ns *Namespace) After(n any, l any) (any, error) {
 
 // Delimit takes a given list l and returns a string delimited by sep.
 // If last is passed to the function, it will be used as the final delimiter.
-func (ns *Namespace) Delimit(l, sep any, last ...any) (template.HTML, error) {
+func (ns *Namespace) Delimit(ctx context.Context, l, sep any, last ...any) (string, error) {
 	d, err := cast.ToStringE(sep)
 	if err != nil {
 		return "", err
@@ -126,7 +118,7 @@ func (ns *Namespace) Delimit(l, sep any, last ...any) (template.HTML, error) {
 	var str string
 	switch lv.Kind() {
 	case reflect.Map:
-		sortSeq, err := ns.Sort(l)
+		sortSeq, err := ns.Sort(ctx, l)
 		if err != nil {
 			return "", err
 		}
@@ -150,10 +142,10 @@ func (ns *Namespace) Delimit(l, sep any, last ...any) (template.HTML, error) {
 		}
 
 	default:
-		return "", fmt.Errorf("can't iterate over %v", l)
+		return "", fmt.Errorf("can't iterate over %T", l)
 	}
 
-	return template.HTML(str), nil
+	return str, nil
 }
 
 // Dictionary creates a new map from the given parameters by
@@ -193,50 +185,6 @@ func (ns *Namespace) Dictionary(values ...any) (map[string]any, error) {
 	}
 
 	return root, nil
-}
-
-// EchoParam returns a the value in the collection c with key k if is set; otherwise, it returns an
-// empty string.
-func (ns *Namespace) EchoParam(c, k any) any {
-	av, isNil := indirect(reflect.ValueOf(c))
-	if isNil {
-		return ""
-	}
-
-	var avv reflect.Value
-	switch av.Kind() {
-	case reflect.Array, reflect.Slice:
-		index, ok := k.(int)
-		if ok && av.Len() > index {
-			avv = av.Index(index)
-		}
-	case reflect.Map:
-		kv := reflect.ValueOf(k)
-		if kv.Type().AssignableTo(av.Type().Key()) {
-			avv = av.MapIndex(kv)
-		}
-	}
-
-	avv, isNil = indirect(avv)
-
-	if isNil {
-		return ""
-	}
-
-	if avv.IsValid() {
-		switch avv.Kind() {
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			return avv.Int()
-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			return avv.Uint()
-		case reflect.Float32, reflect.Float64:
-			return avv.Float()
-		case reflect.String:
-			return avv.String()
-		}
-	}
-
-	return ""
 }
 
 // First returns the first limit items in list l.
@@ -393,7 +341,7 @@ func (ns *Namespace) IsSet(c any, key any) (bool, error) {
 			return av.MapIndex(kv).IsValid(), nil
 		}
 	default:
-		helpers.DistinctErrorLog.Printf("WARNING: calling IsSet with unsupported type %q (%T) will always return false.\n", av.Kind(), c)
+		ns.deps.Log.Warnf("calling IsSet with unsupported type %q (%T) will always return false.\n", av.Kind(), c)
 	}
 
 	return false, nil
@@ -432,47 +380,6 @@ func (ns *Namespace) Last(limit any, l any) (any, error) {
 	}
 
 	return seqv.Slice(seqv.Len()-limitv, seqv.Len()).Interface(), nil
-}
-
-// Querify encodes the given params in URL-encoded form ("bar=baz&foo=quux") sorted by key.
-func (ns *Namespace) Querify(params ...any) (string, error) {
-	qs := url.Values{}
-
-	if len(params) == 1 {
-		switch v := params[0].(type) {
-		case []string:
-			if len(v)%2 != 0 {
-				return "", errors.New("invalid query")
-			}
-
-			for i := 0; i < len(v); i += 2 {
-				qs.Add(v[i], v[i+1])
-			}
-
-			return qs.Encode(), nil
-
-		case []any:
-			params = v
-
-		default:
-			return "", errors.New("query keys must be strings")
-		}
-	}
-
-	if len(params)%2 != 0 {
-		return "", errors.New("invalid query")
-	}
-
-	for i := 0; i < len(params); i += 2 {
-		switch v := params[i].(type) {
-		case string:
-			qs.Add(v, fmt.Sprintf("%v", params[i+1]))
-		default:
-			return "", errors.New("query keys must be strings")
-		}
-	}
-
-	return qs.Encode(), nil
 }
 
 // Reverse creates a copy of the list l and reverses it.
@@ -574,7 +481,7 @@ func (ns *Namespace) Seq(args ...any) ([]int, error) {
 	return seq, nil
 }
 
-// Shuffle returns list l in a randomised order.
+// Shuffle returns list l in a randomized order.
 func (ns *Namespace) Shuffle(l any) (any, error) {
 	if l == nil {
 		return nil, errors.New("both count and seq must be provided")
@@ -619,10 +526,10 @@ type intersector struct {
 }
 
 func (i *intersector) appendIfNotSeen(v reflect.Value) {
-	vi := v.Interface()
-	if !i.seen[vi] {
+	k := normalize(v)
+	if !i.seen[k] {
 		i.r = reflect.Append(i.r, v)
-		i.seen[vi] = true
+		i.seen[k] = true
 	}
 }
 
@@ -640,7 +547,7 @@ func (i *intersector) handleValuePair(l1vv, l2vv reflect.Value) {
 			i.appendIfNotSeen(l1vv)
 		}
 	case kind == reflect.Ptr, kind == reflect.Struct:
-		if l1vv.Interface() == l2vv.Interface() {
+		if types.Unwrapv(l1vv.Interface()) == types.Unwrapv(l2vv.Interface()) {
 			i.appendIfNotSeen(l1vv)
 		}
 	case kind == reflect.Interface:

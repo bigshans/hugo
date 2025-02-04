@@ -14,16 +14,17 @@
 package hugolib
 
 import (
+	"fmt"
 	"testing"
 )
 
 func Test404(t *testing.T) {
 	t.Parallel()
 
-	b := newTestSitesBuilder(t)
-	b.WithSimpleConfigFile().WithTemplatesAdded(
-		"404.html",
-		`
+	files := `
+-- hugo.toml --
+baseURL = "http://example.com/"	
+-- layouts/404.html --
 {{ $home := site.Home }}
 404: 
 Parent: {{ .Parent.Kind }}
@@ -35,16 +36,21 @@ InSection: {{ .InSection $home.Section }}|{{ $home.InSection . }}
 Sections: {{ len .Sections }}|
 Page: {{ .Page.RelPermalink }}|
 Data: {{ len .Data }}|
+`
 
-`,
-	)
-	b.Build(BuildCfg{})
+	b := NewIntegrationTestBuilder(
+		IntegrationTestConfig{
+			T:           t,
+			TxtarString: files,
+			// LogLevel:    logg.LevelTrace,
+			// Verbose:     true,
+		},
+	).Build()
 
 	// Note: We currently have only 1 404 page. One might think that we should have
 	// multiple, to follow the Custom Output scheme, but I don't see how that would work
 	// right now.
 	b.AssertFileContent("public/404.html", `
-
   404:
 Parent: home
 IsAncestor: false/true
@@ -76,4 +82,34 @@ Page not found
 	b.AssertFileContent("public/404.html", `
 Base:
 Page not found`)
+}
+
+func Test404EditTemplate(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+baseURL = "http://example.com/"
+disableLiveReload = true
+[internal]
+fastRenderMode = true
+-- layouts/_default/baseof.html --
+Base: {{ block "main" . }}{{ end }}
+-- layouts/404.html --
+{{ define "main" }}
+Not found.
+{{ end }}
+	
+	`
+
+	b := TestRunning(t, files)
+
+	b.AssertFileContent("public/404.html", `Not found.`)
+
+	b.EditFiles("layouts/404.html", `Not found. Updated.`).Build()
+
+	fmt.Println("Rebuilding")
+	b.BuildPartial("/does-not-exist")
+
+	b.AssertFileContent("public/404.html", `Not found. Updated.`)
 }

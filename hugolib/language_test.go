@@ -26,7 +26,7 @@ import (
 func TestI18n(t *testing.T) {
 	c := qt.New(t)
 
-	//https://github.com/gohugoio/hugo/issues/7804
+	// https://github.com/gohugoio/hugo/issues/7804
 	c.Run("pt-br should be case insensitive", func(c *qt.C) {
 		b := newTestSitesBuilder(c)
 		langCode := func() string {
@@ -76,12 +76,10 @@ name = "foo-a"
 
 		menus := b.H.Sites[0].Menus()
 		c.Assert(menus, qt.HasLen, 1)
-
 	})
 }
 
 func TestLanguageNumberFormatting(t *testing.T) {
-
 	b := newTestSitesBuilder(t)
 	b.WithConfigFile("toml", `
 baseURL = "https://example.org"
@@ -106,8 +104,7 @@ FormatCurrency: {{ 512.5032 | lang.FormatCurrency 2 "USD" }}
 FormatAccounting: {{ 512.5032 | lang.FormatAccounting 2 "NOK" }}
 FormatNumberCustom: {{ lang.FormatNumberCustom 2 12345.6789 }}
 
-# We renamed this to FormatNumberCustom in 0.87.0.
-NumFmt: {{ -98765.4321 | lang.NumFmt 2 }}
+
 
 	
 `)
@@ -122,7 +119,6 @@ FormatCurrency: $512.50
 FormatAccounting: NOK512.50
 FormatNumberCustom: 12,345.68
         
-NumFmt: -98,765.43
 `,
 	)
 
@@ -133,7 +129,16 @@ FormatCurrency: 512,50 USD
 FormatAccounting: 512,50 kr
 FormatNumberCustom: 12,345.68
 
-# We renamed this to FormatNumberCustom in 0.87.0.
-NumFmt: -98,765.43
 `)
+}
+
+// Issue 11993.
+func TestI18nDotFile(t *testing.T) {
+	files := `
+-- hugo.toml --{}
+baseURL = "https://example.com"
+-- i18n/.keep --
+-- data/.keep --
+`
+	Test(t, files)
 }

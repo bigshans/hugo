@@ -16,27 +16,29 @@ package markup_config
 import (
 	"github.com/gohugoio/hugo/common/maps"
 	"github.com/gohugoio/hugo/config"
-	"github.com/gohugoio/hugo/docshelper"
 	"github.com/gohugoio/hugo/markup/asciidocext/asciidocext_config"
 	"github.com/gohugoio/hugo/markup/goldmark/goldmark_config"
 	"github.com/gohugoio/hugo/markup/highlight"
 	"github.com/gohugoio/hugo/markup/pandoc/pandoc_config"
 	"github.com/gohugoio/hugo/markup/tableofcontents"
-	"github.com/gohugoio/hugo/parser"
 	"github.com/mitchellh/mapstructure"
 )
 
 type Config struct {
 	// Default markdown handler for md/markdown extensions.
 	// Default is "goldmark".
-	// Before Hugo 0.60 this was "blackfriday".
 	DefaultMarkdownHandler string
 
-	Highlight       highlight.Config
+	// The configuration used by code highlighters.
+	Highlight highlight.Config
+
+	// Table of contents configuration
 	TableOfContents tableofcontents.Config
 
-	// Content renderers
-	Goldmark    goldmark_config.Config
+	// Configuration for the Goldmark markdown engine.
+	Goldmark goldmark_config.Config
+
+	// Configuration for the Asciidoc external markdown engine.
 	AsciidocExt asciidocext_config.Config
 	Pandoc pandoc_config.Config
 }
@@ -48,6 +50,8 @@ func Decode(cfg config.Provider) (conf Config, err error) {
 	if m == nil {
 		return
 	}
+	m = maps.CleanConfigStringMap(m)
+
 	normalizeConfig(m)
 
 	err = mapstructure.WeakDecode(m, &conf)
@@ -103,11 +107,4 @@ var Default = Config{
 
 	Goldmark:    goldmark_config.Default,
 	AsciidocExt: asciidocext_config.Default,
-}
-
-func init() {
-	docsProvider := func() docshelper.DocProvider {
-		return docshelper.DocProvider{"config": map[string]any{"markup": parser.LowerCaseCamelJSONMarshaller{Value: Default}}}
-	}
-	docshelper.AddDocProviderFunc(docsProvider)
 }

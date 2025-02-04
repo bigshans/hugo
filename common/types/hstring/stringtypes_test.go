@@ -1,4 +1,4 @@
-// Copyright 2022 The Hugo Authors. All rights reserved.
+// Copyright 2024 The Hugo Authors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -25,6 +25,6 @@ func TestRenderedString(t *testing.T) {
 	c := qt.New(t)
 
 	// Validate that it will behave like a string in Hugo settings.
-	c.Assert(cast.ToString(RenderedString("Hugo")), qt.Equals, "Hugo")
-	c.Assert(template.HTML(RenderedString("Hugo")), qt.Equals, template.HTML("Hugo"))
+	c.Assert(cast.ToString(HTML("Hugo")), qt.Equals, "Hugo")
+	c.Assert(template.HTML(HTML("Hugo")), qt.Equals, template.HTML("Hugo"))
 }

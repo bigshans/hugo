@@ -35,6 +35,7 @@ type OutputFormatContentProvider interface {
 
 // OutputFormatPageContentProvider holds the exported methods from Page that are "outputFormat aware".
 type OutputFormatPageContentProvider interface {
+	MarkupProvider
 	ContentProvider
 	TableOfContentsProvider
 	PageRenderProvider
@@ -74,10 +75,14 @@ func (lcp *LazyContentProvider) Reset() {
 	lcp.init.Reset()
 }
 
+func (lcp *LazyContentProvider) Markup(opts ...any) Markup {
+	lcp.init.Do(context.Background())
+	return lcp.cp.Markup(opts...)
+}
+
 func (lcp *LazyContentProvider) TableOfContents(ctx context.Context) template.HTML {
 	lcp.init.Do(ctx)
 	return lcp.cp.TableOfContents(ctx)
-
 }
 
 func (lcp *LazyContentProvider) Fragments(ctx context.Context) *tableofcontents.Fragments {
@@ -88,6 +93,11 @@ func (lcp *LazyContentProvider) Fragments(ctx context.Context) *tableofcontents.
 func (lcp *LazyContentProvider) Content(ctx context.Context) (any, error) {
 	lcp.init.Do(ctx)
 	return lcp.cp.Content(ctx)
+}
+
+func (lcp *LazyContentProvider) ContentWithoutSummary(ctx context.Context) (template.HTML, error) {
+	lcp.init.Do(ctx)
+	return lcp.cp.ContentWithoutSummary(ctx)
 }
 
 func (lcp *LazyContentProvider) Plain(ctx context.Context) string {
@@ -131,7 +141,7 @@ func (lcp *LazyContentProvider) Len(ctx context.Context) int {
 }
 
 func (lcp *LazyContentProvider) Render(ctx context.Context, layout ...string) (template.HTML, error) {
-	lcp.init.Do(context.TODO())
+	lcp.init.Do(ctx)
 	return lcp.cp.Render(ctx, layout...)
 }
 
@@ -149,6 +159,7 @@ func (lcp *LazyContentProvider) ParseContent(ctx context.Context, content []byte
 	lcp.init.Do(ctx)
 	return lcp.cp.ParseContent(ctx, content)
 }
+
 func (lcp *LazyContentProvider) RenderContent(ctx context.Context, content []byte, doc any) (converter.ResultRender, bool, error) {
 	lcp.init.Do(ctx)
 	return lcp.cp.RenderContent(ctx, content, doc)

@@ -31,6 +31,20 @@ func init() {
 			Context: func(cctx context.Context, args ...any) (any, error) { return ctx, nil },
 		}
 
+		ns.AddMethodMapping(ctx.Abs,
+			nil,
+			[][2]string{
+				{"{{ math.Abs -2.1 }}", "2.1"},
+			},
+		)
+
+		ns.AddMethodMapping(ctx.Acos,
+			nil,
+			[][2]string{
+				{"{{ math.Acos 1 }}", "0"},
+			},
+		)
+
 		ns.AddMethodMapping(ctx.Add,
 			[]string{"add"},
 			[][2]string{
@@ -38,10 +52,38 @@ func init() {
 			},
 		)
 
+		ns.AddMethodMapping(ctx.Asin,
+			nil,
+			[][2]string{
+				{"{{ math.Asin 1 }}", "1.5707963267948966"},
+			},
+		)
+
+		ns.AddMethodMapping(ctx.Atan,
+			nil,
+			[][2]string{
+				{"{{ math.Atan 1 }}", "0.7853981633974483"},
+			},
+		)
+
+		ns.AddMethodMapping(ctx.Atan2,
+			nil,
+			[][2]string{
+				{"{{ math.Atan2 1 2 }}", "0.4636476090008061"},
+			},
+		)
+
 		ns.AddMethodMapping(ctx.Ceil,
 			nil,
 			[][2]string{
 				{"{{ math.Ceil 2.1 }}", "3"},
+			},
+		)
+
+		ns.AddMethodMapping(ctx.Cos,
+			nil,
+			[][2]string{
+				{"{{ math.Cos 1 }}", "0.5403023058681398"},
 			},
 		)
 
@@ -101,6 +143,13 @@ func init() {
 			},
 		)
 
+		ns.AddMethodMapping(ctx.Pi,
+			nil,
+			[][2]string{
+				{"{{ math.Pi }}", "3.141592653589793"},
+			},
+		)
+
 		ns.AddMethodMapping(ctx.Pow,
 			[]string{"pow"},
 			[][2]string{
@@ -108,10 +157,24 @@ func init() {
 			},
 		)
 
+		ns.AddMethodMapping(ctx.Rand,
+			nil,
+			[][2]string{
+				{"{{ math.Rand }}", "0.6312770459590062"},
+			},
+		)
+
 		ns.AddMethodMapping(ctx.Round,
 			nil,
 			[][2]string{
 				{"{{ math.Round 1.5 }}", "2"},
+			},
+		)
+
+		ns.AddMethodMapping(ctx.Sin,
+			nil,
+			[][2]string{
+				{"{{ math.Sin 1 }}", "0.8414709848078965"},
 			},
 		)
 
@@ -126,6 +189,27 @@ func init() {
 			[]string{"sub"},
 			[][2]string{
 				{"{{ sub 3 2 }}", "1"},
+			},
+		)
+
+		ns.AddMethodMapping(ctx.Tan,
+			nil,
+			[][2]string{
+				{"{{ math.Tan 1 }}", "1.557407724654902"},
+			},
+		)
+
+		ns.AddMethodMapping(ctx.ToDegrees,
+			nil,
+			[][2]string{
+				{"{{ math.ToDegrees 1.5707963267948966 }}", "90"},
+			},
+		)
+
+		ns.AddMethodMapping(ctx.ToRadians,
+			nil,
+			[][2]string{
+				{"{{ math.ToRadians 90 }}", "1.5707963267948966"},
 			},
 		)
 

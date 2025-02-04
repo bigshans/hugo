@@ -1,4 +1,4 @@
-// Copyright 2022 The Hugo Authors. All rights reserved.
+// Copyright 2024 The Hugo Authors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,9 +15,11 @@ package template
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"reflect"
 
+	"github.com/gohugoio/hugo/common/herrors"
 	"github.com/gohugoio/hugo/common/hreflect"
 
 	"github.com/gohugoio/hugo/tpl/internal/go_templates/texttemplate/parse"
@@ -44,6 +46,7 @@ type ExecHelper interface {
 	GetFunc(ctx context.Context, tmpl Preparer, name string) (reflect.Value, reflect.Value, bool)
 	GetMethod(ctx context.Context, tmpl Preparer, receiver reflect.Value, name string) (method reflect.Value, firstArg reflect.Value)
 	GetMapValue(ctx context.Context, tmpl Preparer, receiver, key reflect.Value) (reflect.Value, bool)
+	OnCalled(ctx context.Context, tmpl Preparer, name string, args []reflect.Value, result reflect.Value)
 }
 
 // Executer executes a given template.
@@ -58,19 +61,6 @@ type executer struct {
 func NewExecuter(helper ExecHelper) Executer {
 	return &executer{helper: helper}
 }
-
-type (
-	pageContextKeyType    string
-	hasLockContextKeyType string
-	stackContextKeyType   string
-)
-
-const (
-	// The data page passed to ExecuteWithContext gets stored with this key.
-	PageContextKey = pageContextKeyType("page")
-	// Used in partialCached to signal to nested templates that a lock is already taken.
-	HasLockContextKey = hasLockContextKeyType("hasLock")
-)
 
 // Note: The context is currently not fully implemented in Hugo. This is a work in progress.
 func (t *executer) ExecuteWithContext(ctx context.Context, p Preparer, wr io.Writer, data any) error {
@@ -267,10 +257,53 @@ func (s *state) evalField(dot reflect.Value, fieldName string, node parse.Node, 
 	panic("not reached")
 }
 
+// newErrorWithCause creates a new error with the given cause.
+func newErrorWithCause(err error) *TryError {
+	return &TryError{Err: err, Cause: herrors.Cause(err)}
+}
+
+// TryError wraps an error with a cause.
+type TryError struct {
+	Err   error
+	Cause error
+}
+
+func (e *TryError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *TryError) Unwrap() error {
+	return e.Err
+}
+
+// TryValue is what gets returned when using the "try" keyword.
+type TryValue struct {
+	// Value is the value returned by the function or method wrapped with "try".
+	// This will always be nil if Err is set.
+	Value any
+
+	// Err is the error returned by the function or method wrapped with "try".
+	// This will always be nil if Value is set.
+	Err *TryError
+}
+
 // evalCall executes a function or method call. If it's a method, fun already has the receiver bound, so
 // it looks just like a function call. The arg list, if non-nil, includes (in the manner of the shell), arg[0]
 // as the function itself.
-func (s *state) evalCall(dot, fun reflect.Value, isBuiltin bool, node parse.Node, name string, args []parse.Node, final reflect.Value, first ...reflect.Value) reflect.Value {
+func (s *state) evalCall(dot, fun reflect.Value, isBuiltin bool, node parse.Node, name string, args []parse.Node, final reflect.Value, first ...reflect.Value) (val reflect.Value) {
+	// Added for Hugo.
+	if name == "try" {
+		defer func() {
+			if r := recover(); r != nil {
+				// Cause: herrors.Cause(err)
+				if err, ok := r.(error); ok {
+					val = reflect.ValueOf(TryValue{Value: nil, Err: newErrorWithCause(err)})
+				} else {
+					val = reflect.ValueOf(TryValue{Value: nil, Err: newErrorWithCause(fmt.Errorf("%v", r))})
+				}
+			}
+		}()
+	}
 	if args != nil {
 		args = args[1:] // Zeroth arg is function name/node; not passed to function.
 	}
@@ -290,9 +323,8 @@ func (s *state) evalCall(dot, fun reflect.Value, isBuiltin bool, node parse.Node
 	} else if numIn != typ.NumIn() {
 		s.errorf("wrong number of args for %s: want %d got %d", name, typ.NumIn(), numIn)
 	}
-	if !goodFunc(typ) {
-		// TODO: This could still be a confusing error; maybe goodFunc should provide info.
-		s.errorf("can't call method/function %q with %d results", name, typ.NumOut())
+	if err := goodFunc(name, typ); err != nil {
+		s.errorf("%v", err)
 	}
 
 	unwrap := func(v reflect.Value) reflect.Value {
@@ -357,6 +389,14 @@ func (s *state) evalCall(dot, fun reflect.Value, isBuiltin bool, node parse.Node
 		argv[i] = s.validateType(final, t)
 	}
 
+	// Special case for the "call" builtin.
+	// Insert the name of the callee function as the first argument.
+	if isBuiltin && name == "call" {
+		calleeName := args[0].String()
+		argv = append([]reflect.Value{reflect.ValueOf(calleeName)}, argv...)
+		fun = reflect.ValueOf(call)
+	}
+
 	// Added for Hugo
 	for i := 0; i < len(first); i++ {
 		argv[i] = s.validateType(first[i], typ.In(i))
@@ -369,7 +409,19 @@ func (s *state) evalCall(dot, fun reflect.Value, isBuiltin bool, node parse.Node
 		s.at(node)
 		s.errorf("error calling %s: %w", name, err)
 	}
-	return unwrap(v)
+	vv := unwrap(v)
+
+	// Added for Hugo
+	if s.helper != nil {
+		s.helper.OnCalled(s.ctx, s.prep, name, argv, vv)
+	}
+
+	// Added for Hugo.
+	if name == "try" {
+		return reflect.ValueOf(TryValue{Value: vv.Interface()})
+	}
+
+	return vv
 }
 
 func isTrue(val reflect.Value) (truth, ok bool) {

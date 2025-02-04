@@ -17,11 +17,12 @@ import (
 	"context"
 	"html/template"
 
+	"github.com/gohugoio/hugo/common/types"
 	"github.com/gohugoio/hugo/resources/page"
 )
 
 // A placeholder for the TableOfContents markup. This is what we pass to the Goldmark etc. renderers.
-var tocShortcodePlaceholder = createShortcodePlaceholder("TOC", 0)
+var tocShortcodePlaceholder = createShortcodePlaceholder("TOC", 0, 0)
 
 // shortcodeRenderer is typically used to delay rendering of inner shortcodes
 // marked with placeholders in the content.
@@ -64,6 +65,7 @@ var zeroShortcode = prerenderedShortcode{}
 type pageForShortcode struct {
 	page.PageWithoutContent
 	page.TableOfContentsProvider
+	page.MarkupProvider
 	page.ContentProvider
 
 	// We need to replace it after we have rendered it, so provide a
@@ -73,17 +75,21 @@ type pageForShortcode struct {
 	p *pageState
 }
 
+var _ types.Unwrapper = (*pageForShortcode)(nil)
+
 func newPageForShortcode(p *pageState) page.Page {
 	return &pageForShortcode{
 		PageWithoutContent:      p,
 		TableOfContentsProvider: p,
+		MarkupProvider:          page.NopPage,
 		ContentProvider:         page.NopPage,
 		toc:                     template.HTML(tocShortcodePlaceholder),
 		p:                       p,
 	}
 }
 
-func (p *pageForShortcode) page() page.Page {
+// For internal use.
+func (p *pageForShortcode) Unwrapv() any {
 	return p.PageWithoutContent.(page.Page)
 }
 
@@ -92,25 +98,34 @@ func (p *pageForShortcode) String() string {
 }
 
 func (p *pageForShortcode) TableOfContents(context.Context) template.HTML {
-	p.p.enablePlaceholders()
 	return p.toc
 }
+
+var _ types.Unwrapper = (*pageForRenderHooks)(nil)
 
 // This is what is sent into the content render hooks (link, image).
 type pageForRenderHooks struct {
 	page.PageWithoutContent
 	page.TableOfContentsProvider
+	page.MarkupProvider
 	page.ContentProvider
+	p *pageState
 }
 
 func newPageForRenderHook(p *pageState) page.Page {
 	return &pageForRenderHooks{
 		PageWithoutContent:      p,
+		MarkupProvider:          page.NopPage,
 		ContentProvider:         page.NopPage,
 		TableOfContentsProvider: p,
+		p:                       p,
 	}
 }
 
-func (p *pageForRenderHooks) page() page.Page {
-	return p.PageWithoutContent.(page.Page)
+func (p *pageForRenderHooks) Unwrapv() any {
+	return p.p
+}
+
+func (p *pageForRenderHooks) String() string {
+	return p.p.String()
 }

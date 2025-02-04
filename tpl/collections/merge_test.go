@@ -19,9 +19,6 @@ import (
 	"testing"
 
 	"github.com/gohugoio/hugo/common/maps"
-	"github.com/gohugoio/hugo/config"
-	"github.com/gohugoio/hugo/deps"
-	"github.com/gohugoio/hugo/langs"
 	"github.com/gohugoio/hugo/parser"
 	"github.com/gohugoio/hugo/parser/metadecoders"
 
@@ -29,7 +26,7 @@ import (
 )
 
 func TestMerge(t *testing.T) {
-	ns := New(&deps.Deps{Language: langs.NewDefaultLanguage(config.New())})
+	ns := newNs()
 
 	simpleMap := map[string]any{"a": 1, "b": 2}
 
@@ -162,9 +159,21 @@ func TestMerge(t *testing.T) {
 	}
 }
 
+func BenchmarkMerge(b *testing.B) {
+	ns := newNs()
+
+	for i := 0; i < b.N; i++ {
+		ns.Merge(
+			map[string]any{"a": 42, "c": 3, "e": 11},
+			map[string]any{"a": 1, "b": 2},
+			map[string]any{"a": 9, "c": 4, "d": 7},
+		)
+	}
+}
+
 func TestMergeDataFormats(t *testing.T) {
 	c := qt.New(t)
-	ns := New(&deps.Deps{Language: langs.NewDefaultLanguage(config.New())})
+	ns := newNs()
 
 	toml1 := `
 V1 = "v1_1"

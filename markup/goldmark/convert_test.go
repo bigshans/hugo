@@ -1,4 +1,4 @@
-// Copyright 2019 The Hugo Authors. All rights reserved.
+// Copyright 2024 The Hugo Authors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,43 +11,64 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package goldmark
+package goldmark_test
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/pelletier/go-toml/v2"
 	"github.com/spf13/cast"
 
+	"github.com/gohugoio/hugo/config"
+	"github.com/gohugoio/hugo/config/testconfig"
 	"github.com/gohugoio/hugo/markup/converter/hooks"
-	"github.com/gohugoio/hugo/markup/goldmark/goldmark_config"
+	"github.com/gohugoio/hugo/markup/goldmark"
 
 	"github.com/gohugoio/hugo/markup/highlight"
 
 	"github.com/gohugoio/hugo/markup/markup_config"
 
+	"github.com/gohugoio/hugo/common/hugio"
 	"github.com/gohugoio/hugo/common/loggers"
+	"github.com/gohugoio/hugo/common/maps"
 
 	"github.com/gohugoio/hugo/markup/converter"
 
 	qt "github.com/frankban/quicktest"
 )
 
-func convert(c *qt.C, mconf markup_config.Config, content string) converter.ResultRender {
-	p, err := Provider.New(
-		converter.ProviderConfig{
-			MarkupConfig: mconf,
-			Logger:       loggers.NewErrorLogger(),
-		},
+var cfgStrHighlichgtNoClasses = `
+[markup]
+[markup.highlight]
+noclasses=false
+`
+
+func convert(c *qt.C, conf config.AllProvider, content string) converter.ResultRender {
+	pconf := converter.ProviderConfig{
+		Logger: loggers.NewDefault(),
+		Conf:   conf,
+	}
+
+	p, err := goldmark.Provider.New(
+		pconf,
 	)
 	c.Assert(err, qt.IsNil)
+
+	mconf := pconf.MarkupConfig()
+
 	h := highlight.New(mconf.Highlight)
 
 	getRenderer := func(t hooks.RendererType, id any) any {
-		if t == hooks.CodeBlockRendererType {
+		switch t {
+		case hooks.CodeBlockRendererType:
 			return h
+		case hooks.TableRendererType:
+			return tableRenderer(0)
 		}
+
 		return nil
 	}
 
@@ -94,7 +115,7 @@ LINE1
 
 * Autolink: https://gohugo.io/
 * Strikethrough:~~Hi~~ Hello, world!
- 
+
 ## Table
 
 | foo | bar |
@@ -122,7 +143,7 @@ That's some text with a footnote.[^1]
 ## Definition Lists
 
 date
-: the datetime assigned to this page. 
+: the datetime assigned to this page.
 
 description
 : the description for the content.
@@ -140,14 +161,18 @@ description
 
 	// Code fences
 	content = strings.Replace(content, "§§§", "```", -1)
-	mconf := markup_config.Default
-	mconf.Highlight.NoClasses = false
-	mconf.Goldmark.Renderer.Unsafe = true
 
-	b := convert(c, mconf, content)
+	cfg := config.FromTOMLConfigString(`
+[markup]
+[markup.highlight]
+noClasses = false
+[markup.goldmark.renderer]
+unsafe = true
+
+`)
+
+	b := convert(c, testconfig.GetTestConfig(nil, cfg), content)
 	got := string(b.Bytes())
-
-	fmt.Println(got)
 
 	// Links
 	c.Assert(got, qt.Contains, `<a href="https://docuapi.netlify.com/">Live Demo here!</a>`)
@@ -170,7 +195,7 @@ description
 	// Extensions
 	c.Assert(got, qt.Contains, `Autolink: <a href="https://gohugo.io/">https://gohugo.io/</a>`)
 	c.Assert(got, qt.Contains, `Strikethrough:<del>Hi</del> Hello, world`)
-	c.Assert(got, qt.Contains, `<th>foo</th>`)
+	c.Assert(got, qt.Contains, `Table`)
 	c.Assert(got, qt.Contains, `<li><input disabled="" type="checkbox"> Push my commits to GitHub</li>`)
 
 	c.Assert(got, qt.Contains, `Straight double &ldquo;quotes&rdquo; and single &lsquo;quotes&rsquo;`)
@@ -183,8 +208,8 @@ description
 
 	toc, ok := b.(converter.TableOfContentsProvider)
 	c.Assert(ok, qt.Equals, true)
-	tocHTML := toc.TableOfContents().ToHTML(1, 2, false)
-	c.Assert(tocHTML, qt.Contains, "TableOfContents")
+	tocHTML, _ := toc.TableOfContents().ToHTML(1, 2, false)
+	c.Assert(string(tocHTML), qt.Contains, "TableOfContents")
 }
 
 func TestConvertAutoIDAsciiOnly(t *testing.T) {
@@ -193,9 +218,17 @@ func TestConvertAutoIDAsciiOnly(t *testing.T) {
 	content := `
 ## God is Good: 神真美好
 `
-	mconf := markup_config.Default
-	mconf.Goldmark.Parser.AutoHeadingIDType = goldmark_config.AutoHeadingIDTypeGitHubAscii
-	b := convert(c, mconf, content)
+
+	cfg := config.FromTOMLConfigString(`
+[markup]
+[markup.goldmark]
+[markup.goldmark.parser]
+autoHeadingIDType = 'github-ascii'
+
+`)
+
+	b := convert(c, testconfig.GetTestConfig(nil, cfg), content)
+
 	got := string(b.Bytes())
 
 	c.Assert(got, qt.Contains, "<h2 id=\"god-is-good-\">")
@@ -208,9 +241,16 @@ func TestConvertAutoIDBlackfriday(t *testing.T) {
 ## Let's try this, shall we?
 
 `
-	mconf := markup_config.Default
-	mconf.Goldmark.Parser.AutoHeadingIDType = goldmark_config.AutoHeadingIDTypeBlackfriday
-	b := convert(c, mconf, content)
+
+	cfg := config.FromTOMLConfigString(`
+[markup]
+[markup.goldmark]
+[markup.goldmark.parser]
+autoHeadingIDType = 'blackfriday'
+`)
+
+	b := convert(c, testconfig.GetTestConfig(nil, cfg), content)
+
 	got := string(b.Bytes())
 
 	c.Assert(got, qt.Contains, "<h2 id=\"let-s-try-this-shall-we\">")
@@ -342,7 +382,7 @@ func TestConvertAttributes(t *testing.T) {
 | ------------- |:-------------:| -----:|
 | AV      | BV |
 {.myclass }`,
-			"<table class=\"myclass\">\n<thead>",
+			"Table",
 		},
 		{
 			"Title and Blockquote",
@@ -356,7 +396,13 @@ func TestConvertAttributes(t *testing.T) {
 			if test.withConfig != nil {
 				test.withConfig(&mconf)
 			}
-			b := convert(c, mconf, test.input)
+			data, err := toml.Marshal(mconf)
+			c.Assert(err, qt.IsNil)
+			m := maps.Params{
+				"markup": config.FromTOMLConfigString(string(data)).Get(""),
+			}
+			conf := testconfig.GetTestConfig(nil, config.NewFrom(m))
+			b := convert(c, conf, test.input)
 			got := string(b.Bytes())
 
 			for _, s := range cast.ToStringSlice(test.expect) {
@@ -378,7 +424,7 @@ func TestConvertIssues(t *testing.T) {
 </custom-element>
 `
 
-		b := convert(c, mconf, input)
+		b := convert(c, unsafeConf(), input)
 		got := string(b.Bytes())
 
 		c.Assert(got, qt.Contains, "<custom-element>\n    <div>This will be \"slotted\" into the custom element.</div>\n</custom-element>\n")
@@ -395,18 +441,18 @@ LINE4
 LINE5
 `
 
-	convertForConfig := func(c *qt.C, conf highlight.Config, code, language string) string {
-		mconf := markup_config.Default
-		mconf.Highlight = conf
-
-		p, err := Provider.New(
-			converter.ProviderConfig{
-				MarkupConfig: mconf,
-				Logger:       loggers.NewErrorLogger(),
-			},
+	convertForConfig := func(c *qt.C, confStr, code, language string) string {
+		cfg := config.FromTOMLConfigString(confStr)
+		conf := testconfig.GetTestConfig(nil, cfg)
+		pcfg := converter.ProviderConfig{
+			Conf:   conf,
+			Logger: loggers.NewDefault(),
+		}
+		p, err := goldmark.Provider.New(
+			pcfg,
 		)
 
-		h := highlight.New(conf)
+		h := highlight.New(pcfg.MarkupConfig().Highlight)
 
 		getRenderer := func(t hooks.RendererType, id any) any {
 			if t == hooks.CodeBlockRendererType {
@@ -427,75 +473,91 @@ LINE5
 	}
 
 	c.Run("Basic", func(c *qt.C) {
-		cfg := highlight.DefaultConfig
-		cfg.NoClasses = false
+		confStr := `
+[markup]
+[markup.highlight]
+noclasses=false
+`
 
-		result := convertForConfig(c, cfg, `echo "Hugo Rocks!"`, "bash")
+		result := convertForConfig(c, confStr, `echo "Hugo Rocks!"`, "bash")
 		// TODO(bep) there is a whitespace mismatch (\n) between this and the highlight template func.
 		c.Assert(result, qt.Equals, "<div class=\"highlight\"><pre tabindex=\"0\" class=\"chroma\"><code class=\"language-bash\" data-lang=\"bash\"><span class=\"line\"><span class=\"cl\"><span class=\"nb\">echo</span> <span class=\"s2\">&#34;Hugo Rocks!&#34;</span>\n</span></span></code></pre></div>")
-		result = convertForConfig(c, cfg, `echo "Hugo Rocks!"`, "unknown")
+		result = convertForConfig(c, confStr, `echo "Hugo Rocks!"`, "unknown")
 		c.Assert(result, qt.Equals, "<pre tabindex=\"0\"><code class=\"language-unknown\" data-lang=\"unknown\">echo &#34;Hugo Rocks!&#34;\n</code></pre>")
 	})
 
 	c.Run("Highlight lines, default config", func(c *qt.C) {
-		cfg := highlight.DefaultConfig
-		cfg.NoClasses = false
-
-		result := convertForConfig(c, cfg, lines, `bash {linenos=table,hl_lines=[2 "4-5"],linenostart=3}`)
+		result := convertForConfig(c, cfgStrHighlichgtNoClasses, lines, `bash {linenos=table,hl_lines=[2 "4-5"],linenostart=3}`)
 		c.Assert(result, qt.Contains, "<div class=\"highlight\"><div class=\"chroma\">\n<table class=\"lntable\"><tr><td class=\"lntd\">\n<pre tabindex=\"0\" class=\"chroma\"><code><span class")
 		c.Assert(result, qt.Contains, "<span class=\"hl\"><span class=\"lnt\">4")
 
-		result = convertForConfig(c, cfg, lines, "bash {linenos=inline,hl_lines=[2]}")
+		result = convertForConfig(c, cfgStrHighlichgtNoClasses, lines, "bash {linenos=inline,hl_lines=[2]}")
 		c.Assert(result, qt.Contains, "<span class=\"ln\">2</span><span class=\"cl\">LINE2\n</span></span>")
 		c.Assert(result, qt.Not(qt.Contains), "<table")
 
-		result = convertForConfig(c, cfg, lines, "bash {linenos=true,hl_lines=[2]}")
+		result = convertForConfig(c, cfgStrHighlichgtNoClasses, lines, "bash {linenos=true,hl_lines=[2]}")
 		c.Assert(result, qt.Contains, "<table")
 		c.Assert(result, qt.Contains, "<span class=\"hl\"><span class=\"lnt\">2\n</span>")
 	})
 
 	c.Run("Highlight lines, linenumbers default on", func(c *qt.C) {
-		cfg := highlight.DefaultConfig
-		cfg.NoClasses = false
-		cfg.LineNos = true
+		confStr := `
+[markup]
+[markup.highlight]
+noclasses=false
+linenos=true
+`
 
-		result := convertForConfig(c, cfg, lines, "bash")
+		result := convertForConfig(c, confStr, lines, "bash")
 		c.Assert(result, qt.Contains, "<span class=\"lnt\">2\n</span>")
 
-		result = convertForConfig(c, cfg, lines, "bash {linenos=false,hl_lines=[2]}")
+		result = convertForConfig(c, confStr, lines, "bash {linenos=false,hl_lines=[2]}")
 		c.Assert(result, qt.Not(qt.Contains), "class=\"lnt\"")
 	})
 
 	c.Run("Highlight lines, linenumbers default on, linenumbers in table default off", func(c *qt.C) {
-		cfg := highlight.DefaultConfig
-		cfg.NoClasses = false
-		cfg.LineNos = true
-		cfg.LineNumbersInTable = false
+		confStr := `
+[markup]
+[markup.highlight]
+noClasses = false
+lineNos = true
+lineNumbersInTable = false
+`
 
-		result := convertForConfig(c, cfg, lines, "bash")
+		result := convertForConfig(c, confStr, lines, "bash")
 		c.Assert(result, qt.Contains, "<span class=\"ln\">2</span><span class=\"cl\">LINE2\n</span>")
-		result = convertForConfig(c, cfg, lines, "bash {linenos=table}")
+		result = convertForConfig(c, confStr, lines, "bash {linenos=table}")
 		c.Assert(result, qt.Contains, "<span class=\"lnt\">1\n</span>")
 	})
 
 	c.Run("No language", func(c *qt.C) {
+		confStr := `
+[markup]
+[markup.highlight]
+noClasses = false
+lineNos = true
+lineNumbersInTable = false
+`
 		cfg := highlight.DefaultConfig
 		cfg.NoClasses = false
 		cfg.LineNos = true
 		cfg.LineNumbersInTable = false
 
-		result := convertForConfig(c, cfg, lines, "")
+		result := convertForConfig(c, confStr, lines, "")
 		c.Assert(result, qt.Contains, "<pre tabindex=\"0\"><code>LINE1\n")
 	})
 
 	c.Run("No language, guess syntax", func(c *qt.C) {
-		cfg := highlight.DefaultConfig
-		cfg.NoClasses = false
-		cfg.GuessSyntax = true
-		cfg.LineNos = true
-		cfg.LineNumbersInTable = false
+		confStr := `
+[markup]
+[markup.highlight]
+noClasses = false
+lineNos = true
+lineNumbersInTable = false
+guessSyntax = true
+`
 
-		result := convertForConfig(c, cfg, lines, "")
+		result := convertForConfig(c, confStr, lines, "")
 		c.Assert(result, qt.Contains, "<span class=\"ln\">2</span><span class=\"cl\">LINE2\n</span></span>")
 	})
 }
@@ -506,11 +568,188 @@ func TestTypographerConfig(t *testing.T) {
 	content := `
 A "quote" and 'another quote' and a "quote with a 'nested' quote" and a 'quote with a "nested" quote' and an ellipsis...
 `
-	mconf := markup_config.Default
-	mconf.Goldmark.Extensions.Typographer.LeftDoubleQuote = "&laquo;"
-	mconf.Goldmark.Extensions.Typographer.RightDoubleQuote = "&raquo;"
-	b := convert(c, mconf, content)
+
+	confStr := `
+[markup]
+[markup.goldmark]
+[markup.goldmark.extensions]
+[markup.goldmark.extensions.typographer]
+leftDoubleQuote = "&laquo;"
+rightDoubleQuote = "&raquo;"
+`
+
+	cfg := config.FromTOMLConfigString(confStr)
+	conf := testconfig.GetTestConfig(nil, cfg)
+
+	b := convert(c, conf, content)
 	got := string(b.Bytes())
 
 	c.Assert(got, qt.Contains, "<p>A &laquo;quote&raquo; and &lsquo;another quote&rsquo; and a &laquo;quote with a &rsquo;nested&rsquo; quote&raquo; and a &lsquo;quote with a &laquo;nested&raquo; quote&rsquo; and an ellipsis&hellip;</p>\n")
+}
+
+// Issue #11045
+func TestTypographerImageAltText(t *testing.T) {
+	c := qt.New(t)
+
+	content := `
+!["They didn't even say 'hello'!" I exclaimed.](https://example.com/image.jpg)
+`
+
+	confStr := `
+[markup]
+[markup.goldmark]
+
+`
+
+	cfg := config.FromTOMLConfigString(confStr)
+	conf := testconfig.GetTestConfig(nil, cfg)
+
+	b := convert(c, conf, content)
+	got := string(b.Bytes())
+
+	c.Assert(got, qt.Contains, "&ldquo;They didn&rsquo;t even say &lsquo;hello&rsquo;!&rdquo; I exclaimed.")
+}
+
+func unsafeConf() config.AllProvider {
+	cfg := config.FromTOMLConfigString(`
+[markup]
+[markup.goldmark.renderer]
+unsafe = true
+`)
+	return testconfig.GetTestConfig(nil, cfg)
+}
+
+func TestConvertCJK(t *testing.T) {
+	c := qt.New(t)
+
+	content := `
+私は太郎です。
+プログラミングが好きです。\ 運動が苦手です。
+`
+
+	confStr := `
+[markup]
+[markup.goldmark]
+`
+
+	cfg := config.FromTOMLConfigString(confStr)
+	conf := testconfig.GetTestConfig(nil, cfg)
+
+	b := convert(c, conf, content)
+	got := string(b.Bytes())
+
+	c.Assert(got, qt.Contains, "<p>私は太郎です。\nプログラミングが好きです。\\ 運動が苦手です。</p>\n")
+}
+
+func TestConvertCJKWithExtensionWithEastAsianLineBreaksOption(t *testing.T) {
+	c := qt.New(t)
+
+	content := `
+私は太郎です。
+プログラミングが好きで、
+運動が苦手です。
+`
+
+	confStr := `
+[markup]
+[markup.goldmark]
+[markup.goldmark.extensions.CJK]
+enable=true
+eastAsianLineBreaks=true
+`
+
+	cfg := config.FromTOMLConfigString(confStr)
+	conf := testconfig.GetTestConfig(nil, cfg)
+
+	b := convert(c, conf, content)
+	got := string(b.Bytes())
+
+	c.Assert(got, qt.Contains, "<p>私は太郎です。プログラミングが好きで、運動が苦手です。</p>\n")
+}
+
+func TestConvertCJKWithExtensionWithEastAsianLineBreaksOptionWithSimple(t *testing.T) {
+	c := qt.New(t)
+
+	content := `
+私は太郎です。
+Programming が好きで、
+運動が苦手です。
+`
+
+	confStr := `
+[markup]
+[markup.goldmark]
+[markup.goldmark.extensions.CJK]
+enable=true
+eastAsianLineBreaks=true
+eastAsianLineBreaksStyle="simple"
+`
+
+	cfg := config.FromTOMLConfigString(confStr)
+	conf := testconfig.GetTestConfig(nil, cfg)
+
+	b := convert(c, conf, content)
+	got := string(b.Bytes())
+
+	c.Assert(got, qt.Contains, "<p>私は太郎です。\nProgramming が好きで、運動が苦手です。</p>\n")
+}
+
+func TestConvertCJKWithExtensionWithEastAsianLineBreaksOptionWithStyle(t *testing.T) {
+	c := qt.New(t)
+
+	content := `
+私は太郎です。
+Programming が好きで、
+運動が苦手です。
+`
+
+	confStr := `
+[markup]
+[markup.goldmark]
+[markup.goldmark.extensions.CJK]
+enable=true
+eastAsianLineBreaks=true
+eastAsianLineBreaksStyle="css3draft"
+`
+
+	cfg := config.FromTOMLConfigString(confStr)
+	conf := testconfig.GetTestConfig(nil, cfg)
+
+	b := convert(c, conf, content)
+	got := string(b.Bytes())
+
+	c.Assert(got, qt.Contains, "<p>私は太郎です。Programming が好きで、運動が苦手です。</p>\n")
+}
+
+func TestConvertCJKWithExtensionWithEscapedSpaceOption(t *testing.T) {
+	c := qt.New(t)
+
+	content := `
+私は太郎です。
+プログラミングが好きです。\ 運動が苦手です。
+`
+
+	confStr := `
+[markup]
+[markup.goldmark]
+[markup.goldmark.extensions.CJK]
+enable=true
+escapedSpace=true
+`
+
+	cfg := config.FromTOMLConfigString(confStr)
+	conf := testconfig.GetTestConfig(nil, cfg)
+
+	b := convert(c, conf, content)
+	got := string(b.Bytes())
+
+	c.Assert(got, qt.Contains, "<p>私は太郎です。\nプログラミングが好きです。運動が苦手です。</p>\n")
+}
+
+type tableRenderer int
+
+func (hr tableRenderer) RenderTable(cctx context.Context, w hugio.FlexiWriter, ctx hooks.TableContext) error {
+	// This is set up with a render hook in the hugolib package, make it simple here.
+	fmt.Fprintln(w, "Table")
+	return nil
 }

@@ -1,9 +1,9 @@
 ---
 
-title: {{ replace .Name "-" " " | title }}
+title: {{ replace .File.ContentBaseName "-" " " | title }}
 date: {{ now.Format "2006-01-02" }}
 
-description: "A short description of this page."
+description: A short description of this page.
 
 # The URL to the site on the internet.
 siteURL: https://gohugo.io/
@@ -20,7 +20,7 @@ byline: "[bep](https://github.com/bep), Hugo Lead"
 To complete this showcase:
 
 1. Write the story about your site in this file.
-2. Add a summary to the `bio.md` file in this folder.
+2. Add a summary to the `bio.md` file in this directory.
 3. Replace the `featured-template.png` with a screenshot of your site. You can rename it, but it must contain the word `featured`.
 4. Create a new pull request in https://github.com/gohugoio/hugoDocs/pulls
 
@@ -34,4 +34,3 @@ bio.md
 
 featured.png
 : A reasonably sized screenshot of your website. It can be named anything, but the name must start with "featured". The sample image is `1500x750` (2:1 aspect ratio).
-

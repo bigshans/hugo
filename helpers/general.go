@@ -15,8 +15,6 @@ package helpers
 
 import (
 	"bytes"
-	"crypto/md5"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -24,38 +22,18 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/gohugoio/hugo/common/loggers"
-
-	"github.com/gohugoio/hugo/common/hugo"
+	bp "github.com/gohugoio/hugo/bufferpool"
 
 	"github.com/spf13/afero"
 
 	"github.com/jdkato/prose/transform"
-
-	bp "github.com/gohugoio/hugo/bufferpool"
-	"github.com/spf13/pflag"
 )
 
 // FilePathSeparator as defined by os.Separator.
 const FilePathSeparator = string(filepath.Separator)
-
-// FindAvailablePort returns an available and valid TCP port.
-func FindAvailablePort() (*net.TCPAddr, error) {
-	l, err := net.Listen("tcp", ":0")
-	if err == nil {
-		defer l.Close()
-		addr := l.Addr()
-		if a, ok := addr.(*net.TCPAddr); ok {
-			return a, nil
-		}
-		return nil, fmt.Errorf("unable to obtain a valid tcp port: %v", addr)
-	}
-	return nil, err
-}
 
 // TCPListen starts listening on a valid TCP port.
 func TCPListen() (net.Listener, *net.TCPAddr, error) {
@@ -69,18 +47,6 @@ func TCPListen() (net.Listener, *net.TCPAddr, error) {
 	}
 	l.Close()
 	return nil, nil, fmt.Errorf("unable to obtain a valid tcp port: %v", addr)
-
-}
-
-// InStringArray checks if a string is an element of a slice of strings
-// and returns a boolean value.
-func InStringArray(arr []string, el string) bool {
-	for _, v := range arr {
-		if v == el {
-			return true
-		}
-	}
-	return false
 }
 
 // FirstUpper returns a string with the first character as upper case.
@@ -131,7 +97,7 @@ func UniqueStringsReuse(s []string) []string {
 	return result
 }
 
-// UniqueStringsReuse returns a sorted slice with any duplicates removed.
+// UniqueStringsSorted returns a sorted slice with any duplicates removed.
 // It will modify the input slice.
 func UniqueStringsSorted(s []string) []string {
 	if len(s) == 0 {
@@ -220,16 +186,23 @@ func ReaderContains(r io.Reader, subslice []byte) bool {
 //
 // - "Go" (strings.Title)
 // - "AP" (see https://www.apstylebook.com/)
-// - "Chicago" (see http://www.chicagomanualofstyle.org/home.html)
+// - "Chicago" (see https://www.chicagomanualofstyle.org/home.html)
+// - "FirstUpper" (only the first character is upper case)
+// - "None" (no transformation)
 //
 // If an unknown or empty style is provided, AP style is what you get.
 func GetTitleFunc(style string) func(s string) string {
 	switch strings.ToLower(style) {
 	case "go":
+		//lint:ignore SA1019 keep for now.
 		return strings.Title
 	case "chicago":
 		tc := transform.NewTitleConverter(transform.ChicagoStyle)
 		return tc.Title
+	case "none":
+		return func(s string) string { return s }
+	case "firstupper":
+		return FirstUpper
 	default:
 		tc := transform.NewTitleConverter(transform.APStyle)
 		return tc.Title
@@ -268,160 +241,6 @@ func compareStringSlices(a, b []string) bool {
 	return true
 }
 
-// DistinctLogger ignores duplicate log statements.
-type DistinctLogger struct {
-	loggers.Logger
-	sync.RWMutex
-	m map[string]bool
-}
-
-func (l *DistinctLogger) Reset() {
-	l.Lock()
-	defer l.Unlock()
-
-	l.m = make(map[string]bool)
-}
-
-// Println will log the string returned from fmt.Sprintln given the arguments,
-// but not if it has been logged before.
-func (l *DistinctLogger) Println(v ...any) {
-	// fmt.Sprint doesn't add space between string arguments
-	logStatement := strings.TrimSpace(fmt.Sprintln(v...))
-	l.printIfNotPrinted("println", logStatement, func() {
-		l.Logger.Println(logStatement)
-	})
-}
-
-// Printf will log the string returned from fmt.Sprintf given the arguments,
-// but not if it has been logged before.
-func (l *DistinctLogger) Printf(format string, v ...any) {
-	logStatement := fmt.Sprintf(format, v...)
-	l.printIfNotPrinted("printf", logStatement, func() {
-		l.Logger.Printf(format, v...)
-	})
-}
-
-func (l *DistinctLogger) Debugf(format string, v ...any) {
-	logStatement := fmt.Sprintf(format, v...)
-	l.printIfNotPrinted("debugf", logStatement, func() {
-		l.Logger.Debugf(format, v...)
-	})
-}
-
-func (l *DistinctLogger) Debugln(v ...any) {
-	logStatement := fmt.Sprint(v...)
-	l.printIfNotPrinted("debugln", logStatement, func() {
-		l.Logger.Debugln(v...)
-	})
-}
-
-func (l *DistinctLogger) Infof(format string, v ...any) {
-	logStatement := fmt.Sprintf(format, v...)
-	l.printIfNotPrinted("info", logStatement, func() {
-		l.Logger.Infof(format, v...)
-	})
-}
-
-func (l *DistinctLogger) Infoln(v ...any) {
-	logStatement := fmt.Sprint(v...)
-	l.printIfNotPrinted("infoln", logStatement, func() {
-		l.Logger.Infoln(v...)
-	})
-}
-
-func (l *DistinctLogger) Warnf(format string, v ...any) {
-	logStatement := fmt.Sprintf(format, v...)
-	l.printIfNotPrinted("warnf", logStatement, func() {
-		l.Logger.Warnf(format, v...)
-	})
-}
-
-func (l *DistinctLogger) Warnln(v ...any) {
-	logStatement := fmt.Sprint(v...)
-	l.printIfNotPrinted("warnln", logStatement, func() {
-		l.Logger.Warnln(v...)
-	})
-}
-
-func (l *DistinctLogger) Errorf(format string, v ...any) {
-	logStatement := fmt.Sprint(v...)
-	l.printIfNotPrinted("errorf", logStatement, func() {
-		l.Logger.Errorf(format, v...)
-	})
-}
-
-func (l *DistinctLogger) Errorln(v ...any) {
-	logStatement := fmt.Sprint(v...)
-	l.printIfNotPrinted("errorln", logStatement, func() {
-		l.Logger.Errorln(v...)
-	})
-}
-
-func (l *DistinctLogger) hasPrinted(key string) bool {
-	l.RLock()
-	defer l.RUnlock()
-	_, found := l.m[key]
-	return found
-}
-
-func (l *DistinctLogger) printIfNotPrinted(level, logStatement string, print func()) {
-	key := level + logStatement
-	if l.hasPrinted(key) {
-		return
-	}
-	l.Lock()
-	defer l.Unlock()
-	l.m[key] = true // Placing this after print() can cause duplicate warning entries to be logged when --panicOnWarning is true.
-	print()
-
-}
-
-// NewDistinctErrorLogger creates a new DistinctLogger that logs ERRORs
-func NewDistinctErrorLogger() loggers.Logger {
-	return &DistinctLogger{m: make(map[string]bool), Logger: loggers.NewErrorLogger()}
-}
-
-// NewDistinctLogger creates a new DistinctLogger that logs to the provided logger.
-func NewDistinctLogger(logger loggers.Logger) loggers.Logger {
-	return &DistinctLogger{m: make(map[string]bool), Logger: logger}
-}
-
-// NewDistinctWarnLogger creates a new DistinctLogger that logs WARNs
-func NewDistinctWarnLogger() loggers.Logger {
-	return &DistinctLogger{m: make(map[string]bool), Logger: loggers.NewWarningLogger()}
-}
-
-var (
-	// DistinctErrorLog can be used to avoid spamming the logs with errors.
-	DistinctErrorLog = NewDistinctErrorLogger()
-
-	// DistinctWarnLog can be used to avoid spamming the logs with warnings.
-	DistinctWarnLog = NewDistinctWarnLogger()
-)
-
-// InitLoggers resets the global distinct loggers.
-func InitLoggers() {
-	DistinctErrorLog.Reset()
-	DistinctWarnLog.Reset()
-}
-
-// Deprecated informs about a deprecation, but only once for a given set of arguments' values.
-// If the err flag is enabled, it logs as an ERROR (will exit with -1) and the text will
-// point at the next Hugo release.
-// The idea is two remove an item in two Hugo releases to give users and theme authors
-// plenty of time to fix their templates.
-func Deprecated(item, alternative string, err bool) {
-	if err {
-		DistinctErrorLog.Errorf("%s is deprecated and will be removed in Hugo %s. %s", item, hugo.CurrentVersion.Next().ReleaseVersion(), alternative)
-	} else {
-		var warnPanicMessage string
-		if !loggers.PanicOnWarning.Load() {
-			warnPanicMessage = "\n\nRe-run Hugo with the flag --panicOnWarning to get a better error message."
-		}
-		DistinctWarnLog.Warnf("%s is deprecated and will be removed in a future release. %s%s", item, alternative, warnPanicMessage)
-	}
-}
-
 // SliceToLower goes through the source slice and lowers all values.
 func SliceToLower(s []string) []string {
 	if s == nil {
@@ -436,76 +255,9 @@ func SliceToLower(s []string) []string {
 	return l
 }
 
-// MD5String takes a string and returns its MD5 hash.
-func MD5String(f string) string {
-	h := md5.New()
-	h.Write([]byte(f))
-	return hex.EncodeToString(h.Sum([]byte{}))
-}
-
-// MD5FromFileFast creates a MD5 hash from the given file. It only reads parts of
-// the file for speed, so don't use it if the files are very subtly different.
-// It will not close the file.
-func MD5FromFileFast(r io.ReadSeeker) (string, error) {
-	const (
-		// Do not change once set in stone!
-		maxChunks = 8
-		peekSize  = 64
-		seek      = 2048
-	)
-
-	h := md5.New()
-	buff := make([]byte, peekSize)
-
-	for i := 0; i < maxChunks; i++ {
-		if i > 0 {
-			_, err := r.Seek(seek, 0)
-			if err != nil {
-				if err == io.EOF {
-					break
-				}
-				return "", err
-			}
-		}
-
-		_, err := io.ReadAtLeast(r, buff, peekSize)
-		if err != nil {
-			if err == io.EOF || err == io.ErrUnexpectedEOF {
-				h.Write(buff)
-				break
-			}
-			return "", err
-		}
-		h.Write(buff)
-	}
-
-	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
-// MD5FromReader creates a MD5 hash from the given reader.
-func MD5FromReader(r io.Reader) (string, error) {
-	h := md5.New()
-	if _, err := io.Copy(h, r); err != nil {
-		return "", nil
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
 // IsWhitespace determines if the given rune is whitespace.
 func IsWhitespace(r rune) bool {
 	return r == ' ' || r == '\t' || r == '\n' || r == '\r'
-}
-
-// NormalizeHugoFlags facilitates transitions of Hugo command-line flags,
-// e.g. --baseUrl to --baseURL, --uglyUrls to --uglyURLs
-func NormalizeHugoFlags(f *pflag.FlagSet, name string) pflag.NormalizedName {
-	switch name {
-	case "baseUrl":
-		name = "baseURL"
-	case "uglyUrls":
-		name = "uglyURLs"
-	}
-	return pflag.NormalizedName(name)
 }
 
 // PrintFs prints the given filesystem to the given writer starting from the given path.
@@ -516,7 +268,32 @@ func PrintFs(fs afero.Fs, path string, w io.Writer) {
 	}
 
 	afero.Walk(fs, path, func(path string, info os.FileInfo, err error) error {
-		fmt.Println(path)
+		if err != nil {
+			panic(fmt.Sprintf("error: path %q: %s", path, err))
+		}
+		path = filepath.ToSlash(path)
+		if path == "" {
+			path = "."
+		}
+		fmt.Fprintln(w, path, info.IsDir())
 		return nil
 	})
+}
+
+// FormatByteCount pretty formats b.
+func FormatByteCount(bc uint64) string {
+	const (
+		Gigabyte = 1 << 30
+		Megabyte = 1 << 20
+		Kilobyte = 1 << 10
+	)
+	switch {
+	case bc > Gigabyte || -bc > Gigabyte:
+		return fmt.Sprintf("%.2f GB", float64(bc)/Gigabyte)
+	case bc > Megabyte || -bc > Megabyte:
+		return fmt.Sprintf("%.2f MB", float64(bc)/Megabyte)
+	case bc > Kilobyte || -bc > Kilobyte:
+		return fmt.Sprintf("%.2f KB", float64(bc)/Kilobyte)
+	}
+	return fmt.Sprintf("%d B", bc)
 }
